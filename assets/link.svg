@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+    <path d="m4 4h6" style="paint-order:fill markers stroke"/>
+    <path d="m7 4v16h12l1-4" style="paint-order:fill markers stroke"/>
+    <path d="m4 20h3" style="paint-order:fill markers stroke"/>
+    <path d="m12 7v8.544l2.1067-2.926 3.5112 0.81929-5.618-6.4373" style="paint-order:fill markers stroke"/>
+  </g>
+</svg>
