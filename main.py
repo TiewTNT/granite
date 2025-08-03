@@ -3,10 +3,18 @@ from PySide6.QtWidgets import (
     QLineEdit,
 )
 from PySide6.QtGui import (
-    QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices
+    QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices, QTextBlockFormat
 )
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl
 from PySide6.QtSvg import QSvgRenderer
+
+class TypographyScale:
+    def __init__(self, base_size=12, ratio=1.25):
+        self.base_size = base_size
+        self.ratio = ratio
+
+    def size_for(self, level):
+        return round(self.base_size * (self.ratio ** (4-level)))
 
 class LinkableTextEdit(QTextEdit):
     def mousePressEvent(self, event):
@@ -51,35 +59,79 @@ def load_svg_icon(path, size=24):
     icon.addPixmap(pixmap)
     return icon
 
-def format_action(icon_name, check_state_func):
+
+def format_action(icon_name, check_state_func, order, block=False):
     def decorator(func):
         def wrapper(self, checked=None):
             cursor = self.text_edit.textCursor()
-            assert type(cursor) == QTextCursor
 
-            new_fmt = QTextCharFormat()
-            func(self, new_fmt, checked)
-            
-            if cursor.hasSelection():
-                cursor.mergeCharFormat(new_fmt)
+            # Tell Qt: "I'm about to do a batch of edits—hold off repainting."
+            cursor.beginEditBlock()
+
+            # 1) Prepare fresh formats
+            block_fmt = QTextBlockFormat() if block else None
+            char_fmt  = QTextCharFormat()
+
+            # 2) Let the action set its bits
+            func(self, block_fmt or char_fmt, checked)
+
+            if block:
+                # 3) Merge only this block's block‐format
+                cursor.mergeBlockFormat(block_fmt)
+
+                # 4) If it set a header property, size & merge that block's char‐format
+                level = block_fmt.property(1001)
+                if level:
+                    idx = int(level)               # "h2" → 2
+                    font = QFont()
+                    font.setPointSizeF(self.scale.size_for(idx))
+                    char_fmt.setFont(font)
+
+                    cursor.setBlockCharFormat(char_fmt)
+                    # Make new typing inherit the size
+                    self.text_edit.mergeCurrentCharFormat(char_fmt)
+
             else:
-                self.text_edit.mergeCurrentCharFormat(new_fmt)
+                # 5) Normal inline formatting
+                if cursor.hasSelection():
+                    cursor.mergeCharFormat(char_fmt)
+                else:
+                    self.text_edit.mergeCurrentCharFormat(char_fmt)
 
+            # Done with our batch—now Qt can repaint
+            cursor.endEditBlock()
+
+            # Force the viewport to redraw immediately
+            self.text_edit.viewport().update()
+
+            # 6) Sync toolbar states
             self.update_format_states()
-        wrapper._action_icon = icon_name
+        wrapper._action_icon      = icon_name
+        wrapper._order            = order
         wrapper._check_state_func = check_state_func
         return wrapper
     return decorator
 
+
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Tiny Rich Text Editor")
+        self.setWindowTitle("Text Editor")
+        self.setWindowIcon(QIcon('./assets/app_icon.svg'))
 
         # — text edit —
         self.text_edit = LinkableTextEdit()
-        self.text_edit.setHtml("<p>Edit <b>me</b>!</p>")
         self.setCentralWidget(self.text_edit)
+        self.text_edit.document().setDocumentMargin(30)
+
+        default_font = QFont()
+        default_font.setPointSizeF(self.scale.size_for(4)) 
+        default_fmt = QTextCharFormat()
+        default_fmt.setFont(default_font)
+        self.text_edit.setCurrentCharFormat(default_fmt)
+        self.text_edit.setFont(default_font)
+
+        self.text_edit.setHtml("<p>Hello, world!</p>")
 
         # — toolbar —
         self.toolbar = QToolBar("Formatting")
@@ -89,8 +141,11 @@ class App(QMainWindow):
         self._format_actions = []
 
         # 1) Decorator‐based format buttons (bold/italic/underline)
-        for attr_name in dir(self):
-            method = getattr(self, attr_name)
+        format_funcs = [getattr(self, attr_name) for attr_name in dir(self) if callable(getattr(self, attr_name)) and hasattr(getattr(self, attr_name), "_action_icon")]
+        ordered_format_funcs = list("A"*(max([m._order for m in format_funcs]) + 1))
+        for i in format_funcs:
+            ordered_format_funcs[i._order] = i
+        for method in ordered_format_funcs:
             if callable(method) and hasattr(method, "_action_icon"):
                 btn = QToolButton()
                 btn.setIcon(load_svg_icon(f"./assets/{method._action_icon}"))
@@ -98,8 +153,11 @@ class App(QMainWindow):
                 btn.clicked.connect(lambda checked, m=method: m(checked))
                 self.toolbar.addWidget(btn)
                 self._format_actions.append((btn, method))
+            else:
+                self.toolbar.addSeparator()
 
         # 2) Link button & URL popup
+        self.toolbar.addSeparator()
         self.link_button = QToolButton()
         self.link_button.setIcon(load_svg_icon("./assets/link.svg"))
         self.link_button.setCheckable(True)
@@ -124,7 +182,16 @@ class App(QMainWindow):
         self.update_format_states()
 
         self.non_link_underline = False
-        self.non_link_fg = Qt.white
+        self.non_link_fg = self.text_fg
+
+        self.link_input.hide()
+        
+
+
+    accent_color = "#c7795f"
+    text_fg = Qt.white
+    scale = TypographyScale(12, 1.25)
+
 
     def on_selection_changed(self):
         if self.link_button.isChecked():
@@ -185,7 +252,7 @@ class App(QMainWindow):
             self.non_link_underline = fmt.fontUnderline()
             fmt.setFontUnderline(True)
             self.non_link_fg = fmt.foreground()
-            fmt.setForeground(QBrush(Qt.green))
+            fmt.setForeground(QBrush(App.accent_color))
             if cursor.hasSelection():
                 cursor.mergeCharFormat(fmt)
             else:
@@ -251,18 +318,71 @@ class App(QMainWindow):
                 check = getattr(method, "_check_state_func", None)
                 btn.setChecked(check(fmt) if check else False)
 
+
+    def apply_typography_scale(self):
+        doc = self.text_edit.document()
+        block = doc.firstBlock()
+        while block.isValid():
+            fmt = block.blockFormat()
+            level = fmt.property(1001)
+            if level:
+                font = QFont()
+                font.setPointSizeF(self.scale.size_for(int(level)))  # 'h2' → 2
+                # Apply font to block char format
+                char_fmt = block.charFormat()
+                char_fmt.setFont(font)
+                cursor = QTextCursor(block)
+                cursor.setBlockCharFormat(char_fmt)
+            block = block.next()
+
+    
+
     # format_action decorators for bold/italic/underline
-    @format_action("bold.svg", lambda fmt: fmt.fontWeight() > QFont.Normal)
+    @format_action("bold.svg", lambda fmt: fmt.fontWeight() > QFont.Normal, 0)
     def toggle_bold(self, fmt, checked):
         fmt.setFontWeight(QFont.Bold if checked else QFont.Normal)
 
-    @format_action("italics.svg", lambda fmt: fmt.fontItalic())
+    @format_action("italics.svg", lambda fmt: fmt.fontItalic(), 1)
     def toggle_italic(self, fmt, checked):
         fmt.setFontItalic(checked)
 
-    @format_action("underline.svg", lambda fmt: fmt.fontUnderline())
+    @format_action("underline.svg", lambda fmt: fmt.fontUnderline(), 2)
     def toggle_underline(self, fmt, checked):
         fmt.setFontUnderline(checked)
+
+    @format_action("strikethrough.svg", lambda fmt: fmt.fontStrikeOut(), 3)
+    def toggle_strikethrough(self, fmt, checked):
+        fmt.setFontStrikeOut(checked)
+
+    @format_action("highlight.svg", lambda fmt: fmt.background().color() == App.accent_color + "55", 4)
+    def toggle_highlight(self, fmt, checked):
+        fmt.setBackground(QBrush(self.accent_color + "55") if checked else QBrush("#00000000"))
+
+    @format_action("color_text.svg", lambda fmt: fmt.foreground().color() == App.accent_color, 5)
+    def toggle_colored_text(self, fmt, checked):
+        fmt.setForeground(QBrush(self.accent_color) if checked else QBrush(self.text_fg))
+
+    @format_action("h1.svg", lambda fmt: fmt.property(1001) == "1", 7, block=True)
+    def apply_h1(self, fmt, checked):
+        fmt.setProperty(1001, "1")
+
+    @format_action("h2.svg", lambda fmt: fmt.property(1001) == "2", 8, block=True)
+    def apply_h2(self, fmt, checked):
+        fmt.setProperty(1001, "2")
+
+    @format_action("h3.svg", lambda fmt: fmt.property(1001) == "3", 9, block=True)
+    def apply_h3(self, fmt, checked):
+        fmt.setProperty(1001, "3")
+
+    @format_action("body.svg", lambda fmt: fmt.property(1001) == "4", 10, block=True)
+    def apply_body(self, fmt, checked):
+        fmt.setProperty(1001, "4")
+    
+    @format_action("align_center.svg", lambda fmt: False, 12, block=True)
+    def align_center(self, fmt, checked):
+        fmt.setAlignment(Qt.AlignCenter)
+
+
 
 
 if __name__ == "__main__":

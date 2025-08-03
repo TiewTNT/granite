@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+    <path d="m6 18s0 2 6 2c2.9759 6e-6 7-1.0761 7-3 0-2-1.1232-2.968-6-5" style="paint-order:fill markers stroke"/>
+    <path d="m18 6s0-2-6-2c-3.5031-6.8e-6 -5.5528 1.1056-6 2-1 2 1.4641 2.5647 3 3" style="paint-order:fill markers stroke"/>
+    <path d="m3 12h18" style="paint-order:fill markers stroke"/>
+  </g>
+</svg>

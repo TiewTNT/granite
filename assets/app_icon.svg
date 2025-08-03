@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <linearGradient id="linearGradient8" x1="8.1964" x2="15.804" y1="-2.1568" y2="14.157" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6c2d14" offset="0"/>
+      <stop stop-color="#f5b797" offset="1"/>
+    </linearGradient>
+    <linearGradient id="linearGradient10" x1="3" x2="12" y1="13.5" y2="13.5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6f3824" offset="0"/>
+      <stop stop-color="#b75b3f" offset="1"/>
+    </linearGradient>
+    <linearGradient id="linearGradient12" x1="15.952" x2="17.048" y1="17.966" y2="9.0335" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f08865" offset="0"/>
+      <stop stop-color="#e4a391" offset="1"/>
+    </linearGradient>
+  </defs>
+  <path d="m12 3-9 3 9 3 9-3z" fill="url(#linearGradient8)" style="paint-order:fill markers stroke"/>
+  <path d="m3 6v12l9 3v-12z" fill="url(#linearGradient10)" style="paint-order:fill markers stroke"/>
+  <path d="m12 9 9-3v12l-9 3z" fill="url(#linearGradient12)" style="paint-order:fill markers stroke"/>
+</svg>

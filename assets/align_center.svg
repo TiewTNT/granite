@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+    <path d="m4 4h16" style="paint-order:fill markers stroke"/>
+    <path d="m6 8h12" style="paint-order:fill markers stroke"/>
+    <path d="m4 12h5" style="paint-order:fill markers stroke"/>
+    <path d="m13 12h8" style="paint-order:fill markers stroke"/>
+    <path d="m11 16h2" style="paint-order:fill markers stroke"/>
+    <path d="m17 16h3" style="paint-order:fill markers stroke"/>
+    <path d="m4 16h4" style="paint-order:fill markers stroke"/>
+    <path d="m5 20h14" style="paint-order:fill markers stroke"/>
+  </g>
+</svg>
