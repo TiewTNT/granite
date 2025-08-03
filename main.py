@@ -149,8 +149,6 @@ class App(QMainWindow):
         self.text_edit.setCurrentCharFormat(default_fmt)
         self.text_edit.setFont(default_font)
 
-        self.text_edit.setHtml("<p>Hello, world!</p>")
-
         # — toolbar —
         self.toolbar = QToolBar("Formatting")
         self.toolbar.setIconSize(QSize(24, 24))
@@ -394,10 +392,18 @@ class App(QMainWindow):
     @format_action("body.svg", lambda fmt: fmt.property(1001) == "4", 10, block=True)
     def apply_body(self, fmt, checked):
         fmt.setProperty(1001, "4")
-    
-    @format_action("align_center.svg", lambda fmt: False, 12, block=True)
+
+    @format_action("align_left.svg", lambda fmt: False, 12, block=True)
+    def align_left(self, fmt, checked):
+        fmt.setAlignment(Qt.AlignLeft)
+
+    @format_action("align_center.svg", lambda fmt: False, 13, block=True)
     def align_center(self, fmt, checked):
         fmt.setAlignment(Qt.AlignCenter)
+
+    @format_action("align_right.svg", lambda fmt: False, 14, block=True)
+    def align_right(self, fmt, checked):
+        fmt.setAlignment(Qt.AlignRight)
 
 
 
