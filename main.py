@@ -40,6 +40,24 @@ class LinkableTextEdit(QTextEdit):
             self.viewport().setCursor(Qt.IBeamCursor)
         super().mouseMoveEvent(event)
 
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            cursor = self.textCursor()
+            prev_block_fmt = cursor.block().previous().blockFormat()
+            if prev_block_fmt.property(1001) in ("1", "2", "3"):
+                body_fmt = QTextBlockFormat()
+                body_fmt.setProperty(1001, "4")
+                cursor.mergeBlockFormat(body_fmt)
+
+                font = QFont()
+                font.setPointSizeF(App.scale.size_for(4))
+                char_fmt = QTextCharFormat()
+                char_fmt.setFont(font)
+                cursor.setBlockCharFormat(char_fmt)
+
+
 def load_svg_icon(path, size=24):
     renderer = QSvgRenderer(path)
     icon = QIcon()
@@ -191,7 +209,6 @@ class App(QMainWindow):
     accent_color = "#c7795f"
     text_fg = Qt.white
     scale = TypographyScale(12, 1.25)
-
 
     def on_selection_changed(self):
         if self.link_button.isChecked():
