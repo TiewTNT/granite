@@ -9,6 +9,9 @@ from PySide6.QtGui import (
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl
 from PySide6.QtSvg import QSvgRenderer
 
+from pathlib import Path
+import ast
+
 class TypographyScale:
     def __init__(self, base_size=12, ratio=1.25):
         self.base_size = base_size
@@ -62,7 +65,7 @@ class LinkableTextEdit(QTextEdit):
                 cursor.mergeBlockFormat(body_fmt)
 
                 font = QFont()
-                font.setPointSizeF(App.scale.size_for(4))
+                font.setPointSizeF(TypographyScale(App.settings_dict["scale_base"], App.settings_dict["scale_ratio"]).size_for(4))
                 char_fmt = QTextCharFormat()
                 char_fmt.setFont(font)
                 cursor.setBlockCharFormat(char_fmt)
@@ -114,7 +117,7 @@ def format_action(icon_name, check_state_func, order, block=False):
                 if level:
                     idx = int(level)               # "h2" → 2
                     font = QFont()
-                    font.setPointSizeF(self.scale.size_for(idx))
+                    font.setPointSizeF(TypographyScale(self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(idx))
                     char_fmt.setFont(font)
 
                     cursor.setBlockCharFormat(char_fmt)
@@ -157,7 +160,8 @@ class App(QMainWindow):
         self.text_edit.document().setDocumentMargin(30)
 
         default_font = QFont()
-        default_font.setPointSizeF(self.scale.size_for(4)) 
+        default_font.setPointSizeF(TypographyScale(self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(4)) 
+        self.text_edit.setStyleSheet("* {color:"+self.settings_dict["text_fg"]+";background-color:"+self.settings_dict["background"]+"}")
         default_fmt = QTextCharFormat()
         default_fmt.setFont(default_font)
         self.text_edit.setCurrentCharFormat(default_fmt)
@@ -172,16 +176,17 @@ class App(QMainWindow):
 
         # Create a QFileSystemModel
         self.model = QFileSystemModel()
-        self.model.setRootPath("")  # Set the root path (empty string for the entire file system)
+        self.model.setRootPath(r"C:\Users\tntti\AppData\Roaming\TEST")  # Set the root path (empty string for the entire file system)
 
         # Create a QTreeView
         self.tree_view = QTreeView()
         self.tree_view.setModel(self.model)
-        self.tree_view.setRootIndex(self.model.index(""))  # Set the root index to the file system root
+        self.tree_view.setRootIndex(self.model.index(r"C:\Users\tntti\AppData\Roaming\TEST"))  # Set the root index to the file system root
         self.tree_view.setMinimumWidth(75)
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.text_edit)
         self.splitter.addWidget(self.tree_view)
+        self.tree_view.selectionModel().selectionChanged.connect(self.on_file_selection_changed)
         layout.addWidget(self.splitter)
 
         self._format_actions = []
@@ -229,7 +234,7 @@ class App(QMainWindow):
        
 
         self.non_link_underline = False
-        self.non_link_fg = self.text_fg
+        self.non_link_fg = self.settings_dict["text_fg"]
 
         self.link_input.hide()
         text_edit_block_fmt = QTextBlockFormat()
@@ -245,14 +250,49 @@ class App(QMainWindow):
 
         file_view_toggle_shortcut = QShortcut(QKeySequence("Ctrl+J"), self)
         file_view_toggle_shortcut.activated.connect(lambda: self.tree_view.setVisible(not self.tree_view.isVisible()))
+
+        self.text_edit.document().contentsChange.connect(self.save)
         
 
         
 
 
-    accent_color = "#c7795f"
     text_fg = Qt.white
-    scale = TypographyScale(12, 1.25)
+    current_file = None
+
+    settings_dict = {
+        "accent_color": "#c7795f",
+        "scale_ratio": 1.25,
+        "scale_base": 12,
+        "text_fg": "#ffffff",
+        "background": "#2d2d2d",
+    }
+
+    def on_file_selection_changed(self):
+        # Get the selected index
+        indexes = self.tree_view.selectionModel().selectedIndexes()
+        if indexes:
+            index = indexes[0]  # Get the first selected index
+            file_path = self.model.filePath(index)  # Get the file path
+            print(f"Selected file: {file_path}")
+            self.current_file = file_path
+            if not Path(self.current_file).is_dir():
+                with open(self.current_file, "r") as f:
+                    content = f.read()
+            self.text_edit.setText(content.split(":::")[-1])
+            if len(content.split(":::")) > 1:
+                self.settings_dict = ast.literal_eval(content.split(":::")[0])
+                self.apply_typography_scale()
+                
+
+    def save(self):
+        if self.current_file:
+            if not Path(self.current_file).is_dir():
+                override_content = self.text_edit.toHtml()
+
+                override_content = str(self.settings_dict) + ":::" + override_content
+                with open(self.current_file, "w") as f:
+                    f.write(override_content)
 
     def auto_indent_bodies(self):
         doc = self.text_edit.document()
@@ -346,7 +386,7 @@ class App(QMainWindow):
             self.non_link_underline = fmt.fontUnderline()
             fmt.setFontUnderline(True)
             self.non_link_fg = fmt.foreground()
-            fmt.setForeground(QBrush(App.accent_color))
+            fmt.setForeground(QBrush(App.settings_dict["accent_color"]))
             if cursor.hasSelection():
                 cursor.mergeCharFormat(fmt)
             else:
@@ -423,7 +463,7 @@ class App(QMainWindow):
             level = fmt.property(1001)
             if level:
                 font = QFont()
-                font.setPointSizeF(self.scale.size_for(int(level)))  # 'h2' → 2
+                font.setPointSizeF(TypographyScale(self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(int(level)))  # 'h2' → 2
                 # Apply font to block char format
                 char_fmt = block.charFormat()
                 char_fmt.setFont(font)
@@ -458,13 +498,13 @@ class App(QMainWindow):
     def toggle_strikethrough(self, fmt, checked):
         fmt.setFontStrikeOut(checked)
 
-    @format_action("highlight.svg", lambda fmt: fmt.background().color() == App.accent_color + "55", 4)
+    @format_action("highlight.svg", lambda fmt: fmt.background().color() == App.settings_dict["accent_color"] + "55", 4)
     def toggle_highlight(self, fmt, checked):
-        fmt.setBackground(QBrush(self.accent_color + "55") if checked else QBrush("#00000000"))
+        fmt.setBackground(QBrush(self.settings_dict["accent_color"] + "55") if checked else QBrush("#00000000"))
 
-    @format_action("color_text.svg", lambda fmt: fmt.foreground().color() == App.accent_color, 5)
+    @format_action("color_text.svg", lambda fmt: fmt.foreground().color() == App.settings_dict["accent_color"], 5)
     def toggle_colored_text(self, fmt, checked):
-        fmt.setForeground(QBrush(self.accent_color) if checked else QBrush(self.text_fg))
+        fmt.setForeground(QBrush(self.settings_dict["accent_color"]) if checked else QBrush(self.settings_dict["text_fg"]))
 
     @format_action("h1.svg", lambda fmt: fmt.property(1001) == "1", 7, block=True)
     def apply_h1(self, fmt, checked):
