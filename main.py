@@ -1,9 +1,10 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
-    QLineEdit,
+    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout
 )
+
 from PySide6.QtGui import (
-    QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices, QTextBlockFormat
+    QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices, QTextBlockFormat, QKeySequence, QShortcut
 )
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl
 from PySide6.QtSvg import QSvgRenderer
@@ -15,6 +16,13 @@ class TypographyScale:
 
     def size_for(self, level):
         return round(self.base_size * (self.ratio ** (4-level)))
+    
+INDENT_MAP = {
+    "1": (0, 0),     # H1 — no indent
+    "2": (10, 10),   # H2 — slight indent
+    "3": (20, 20),   # H3 — more indent
+    "4": (30, 30),   # Body — maximum indent
+}
 
 class LinkableTextEdit(QTextEdit):
     def mousePressEvent(self, event):
@@ -49,6 +57,8 @@ class LinkableTextEdit(QTextEdit):
             if prev_block_fmt.property(1001) in ("1", "2", "3"):
                 body_fmt = QTextBlockFormat()
                 body_fmt.setProperty(1001, "4")
+                App.update_margins(app, body_fmt)
+            
                 cursor.mergeBlockFormat(body_fmt)
 
                 font = QFont()
@@ -94,11 +104,13 @@ def format_action(icon_name, check_state_func, order, block=False):
             func(self, block_fmt or char_fmt, checked)
 
             if block:
+                level = block_fmt.property(1001)
+
                 # 3) Merge only this block's block‐format
                 cursor.mergeBlockFormat(block_fmt)
 
                 # 4) If it set a header property, size & merge that block's char‐format
-                level = block_fmt.property(1001)
+                
                 if level:
                     idx = int(level)               # "h2" → 2
                     font = QFont()
@@ -136,10 +148,12 @@ class App(QMainWindow):
         super().__init__()
         self.setWindowTitle("Text Editor")
         self.setWindowIcon(QIcon('./assets/app_icon.svg'))
+        layout = QVBoxLayout()
+        
 
         # — text edit —
         self.text_edit = LinkableTextEdit()
-        self.setCentralWidget(self.text_edit)
+        
         self.text_edit.document().setDocumentMargin(30)
 
         default_font = QFont()
@@ -153,6 +167,22 @@ class App(QMainWindow):
         self.toolbar = QToolBar("Formatting")
         self.toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(self.toolbar)
+
+        # — files —
+
+        # Create a QFileSystemModel
+        self.model = QFileSystemModel()
+        self.model.setRootPath("")  # Set the root path (empty string for the entire file system)
+
+        # Create a QTreeView
+        self.tree_view = QTreeView()
+        self.tree_view.setModel(self.model)
+        self.tree_view.setRootIndex(self.model.index(""))  # Set the root index to the file system root
+        self.tree_view.setMinimumWidth(75)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(self.text_edit)
+        self.splitter.addWidget(self.tree_view)
+        layout.addWidget(self.splitter)
 
         self._format_actions = []
 
@@ -196,17 +226,65 @@ class App(QMainWindow):
         # 3) Only *now* hook up the cursor‐moved signal, and do one initial state sync
         self.text_edit.cursorPositionChanged.connect(self.update_format_states)
         self.update_format_states()
+       
 
         self.non_link_underline = False
         self.non_link_fg = self.text_fg
 
         self.link_input.hide()
+        text_edit_block_fmt = QTextBlockFormat()
+        text_edit_block_fmt.setProperty(1001, "4")
+        
+        cursor = self.text_edit.textCursor()
+        self.update_margins(text_edit_block_fmt)
+        self.auto_indent_bodies()
+        cursor.mergeBlockFormat(text_edit_block_fmt)
+
+        self.setCentralWidget(self.splitter)
+        self.setLayout(layout)
+
+        file_view_toggle_shortcut = QShortcut(QKeySequence("Ctrl+J"), self)
+        file_view_toggle_shortcut.activated.connect(lambda: self.tree_view.setVisible(not self.tree_view.isVisible()))
+        
+
         
 
 
     accent_color = "#c7795f"
     text_fg = Qt.white
     scale = TypographyScale(12, 1.25)
+
+    def auto_indent_bodies(self):
+        doc = self.text_edit.document()
+        block = doc.firstBlock()
+        prev_header_level = None
+
+        while block.isValid():
+            fmt = block.blockFormat()
+            level = fmt.property(1001)
+
+            # Check if this block is a heading
+            if level in ("1", "2", "3"):
+                prev_header_level = int(level)
+            
+            # If it's a body block, decide indent
+            elif level == "4":
+                if prev_header_level is not None:
+                    # Indent body to match its header's indent
+                    left_indent, right_indent = INDENT_MAP.get(str(prev_header_level + 1), (0, 0))
+                else:
+                    # No header above → flush left
+                    left_indent, right_indent = (0, 0)
+                
+                fmt.setLeftMargin(left_indent)
+                fmt.setRightMargin(right_indent)
+                cursor = QTextCursor(block)
+                cursor.setBlockFormat(fmt)
+
+            else:
+                prev_header_level = None  # Reset when encountering unknown format
+            
+            block = block.next()
 
     def on_selection_changed(self):
         if self.link_button.isChecked():
@@ -232,6 +310,7 @@ class App(QMainWindow):
                 self.link_input.move(btn_pos)
                 self.link_input.show()
                 return True
+
         return super().eventFilter(obj, event)
 
     def _on_link_entered(self):
@@ -333,6 +412,8 @@ class App(QMainWindow):
                 check = getattr(method, "_check_state_func", None)
                 btn.setChecked(check(fmt) if check else False)
 
+        self.auto_indent_bodies()
+
 
     def apply_typography_scale(self):
         doc = self.text_edit.document()
@@ -350,7 +431,15 @@ class App(QMainWindow):
                 cursor.setBlockCharFormat(char_fmt)
             block = block.next()
 
-    
+    def update_margins(self, fmt):
+        left_indent, right_indent = INDENT_MAP.get(fmt.property(1001), (0, 0))
+        print(fmt)
+
+        assert type(fmt) == QTextBlockFormat
+        fmt.setLeftMargin(left_indent)
+        fmt.setRightMargin(right_indent)
+        
+
 
     # format_action decorators for bold/italic/underline
     @format_action("bold.svg", lambda fmt: fmt.fontWeight() > QFont.Normal, 0)
@@ -380,22 +469,27 @@ class App(QMainWindow):
     @format_action("h1.svg", lambda fmt: fmt.property(1001) == "1", 7, block=True)
     def apply_h1(self, fmt, checked):
         fmt.setProperty(1001, "1")
+        self.update_margins(fmt)
 
     @format_action("h2.svg", lambda fmt: fmt.property(1001) == "2", 8, block=True)
     def apply_h2(self, fmt, checked):
         fmt.setProperty(1001, "2")
+        self.update_margins(fmt)
 
     @format_action("h3.svg", lambda fmt: fmt.property(1001) == "3", 9, block=True)
     def apply_h3(self, fmt, checked):
         fmt.setProperty(1001, "3")
+        self.update_margins(fmt)
 
     @format_action("body.svg", lambda fmt: fmt.property(1001) == "4", 10, block=True)
     def apply_body(self, fmt, checked):
         fmt.setProperty(1001, "4")
+        self.update_margins(fmt)
 
     @format_action("align_left.svg", lambda fmt: False, 12, block=True)
     def align_left(self, fmt, checked):
         fmt.setAlignment(Qt.AlignLeft)
+        self.update_margins(fmt)
 
     @format_action("align_center.svg", lambda fmt: False, 13, block=True)
     def align_center(self, fmt, checked):
