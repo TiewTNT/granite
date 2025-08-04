@@ -6,11 +6,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices, QTextBlockFormat, QKeySequence, QShortcut
 )
-from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl
+from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
-import ast
+import ast, json
 
 class TypographyScale:
     def __init__(self, base_size=12, ratio=1.25):
@@ -267,32 +267,72 @@ class App(QMainWindow):
         "text_fg": "#ffffff",
         "background": "#2d2d2d",
     }
-
+    
     def on_file_selection_changed(self):
-        # Get the selected index
-        indexes = self.tree_view.selectionModel().selectedIndexes()
-        if indexes:
-            index = indexes[0]  # Get the first selected index
-            file_path = self.model.filePath(index)  # Get the file path
-            print(f"Selected file: {file_path}")
-            self.current_file = file_path
-            if not Path(self.current_file).is_dir():
-                with open(self.current_file, "r") as f:
-                    content = f.read()
-            self.text_edit.setText(content.split(":::")[-1])
-            if len(content.split(":::")) > 1:
-                self.settings_dict = ast.literal_eval(content.split(":::")[0])
-                self.apply_typography_scale()
+        self.current_file = self.tree_view.model().filePath(self.tree_view.selectedIndexes()[0])
+        raw = Path(self.current_file).read_text(encoding="utf-8")
+
+        if ":::" in raw:
+            settings_str, html = raw.split(":::", 1)
+            try:
+                settings = json.loads(settings_str)
+            except json.JSONDecodeError:
+                settings = {}
+        else:
+            settings, html = {}, raw
+
+        with QSignalBlocker(self.text_edit.document()):
+            self.text_edit.setHtml(html)
+
+        self.settings_dict.update({k: settings.get(k, self.settings_dict.get(k))
+                                for k in ("scale_base", "scale_ratio",
+                                            "background", "text_fg", "accent_color")})
+
+        doc = self.text_edit.document()
+        for b in settings.get("block_states", []):
+            block = doc.findBlock(b["pos"])
+
+            if block.isValid():
+                block.setUserState(b["userState"])
+                print(b)
+
+                block.blockFormat().setProperty(1001, b.get('1001', 4))
                 
 
-    def save(self):
-        if self.current_file:
-            if not Path(self.current_file).is_dir():
-                override_content = self.text_edit.toHtml()
+        self.apply_typography_scale()
+        self.auto_indent_bodies()
 
-                override_content = str(self.settings_dict) + ":::" + override_content
-                with open(self.current_file, "w") as f:
-                    f.write(override_content)
+
+    def save(self):
+        settings = {"scale_base": self.settings_dict["scale_base"],
+                    "scale_ratio": self.settings_dict["scale_ratio"],
+                    "background": self.settings_dict["background"],
+                    "text_fg": self.settings_dict["text_fg"],
+                    "accent_color": self.settings_dict["accent_color"]}
+
+        blocks_data = []
+        doc = self.text_edit.document()
+        block = doc.begin()
+        while block.isValid():                        # QTextBlock.isValid()
+        
+            state = block.userState()                 # per-block integer
+
+            p1001 = block.blockFormat().property(1001)
+            blocks_data.append({
+                "pos": block.position(),
+                "userState": state,
+                1001: p1001
+            })
+            block = block.next()                      # QTextBlock.next()
+        settings["block_states"] = blocks_data
+
+        settings_str = json.dumps(settings)  # Use JSON reliably
+
+
+        with QSignalBlocker(doc):  # prevents recursive documentsignal emission
+            html = doc.toHtml()
+
+        Path(self.current_file).write_text(settings_str + ":::" + html, encoding="utf-8")
 
     def auto_indent_bodies(self):
         doc = self.text_edit.document()
@@ -459,21 +499,28 @@ class App(QMainWindow):
         doc = self.text_edit.document()
         block = doc.firstBlock()
         while block.isValid():
+
             fmt = block.blockFormat()
             level = fmt.property(1001)
+            if not level: level = 4
             if level:
                 font = QFont()
-                font.setPointSizeF(TypographyScale(self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(int(level)))  # 'h2' → 2
-                # Apply font to block char format
-                char_fmt = block.charFormat()
+                font.setPointSizeF(TypographyScale(
+                    self.settings_dict["scale_base"],
+                    self.settings_dict["scale_ratio"]
+                ).size_for(int(level)))
+
+                char_fmt = QTextCharFormat()
                 char_fmt.setFont(font)
+
                 cursor = QTextCursor(block)
-                cursor.setBlockCharFormat(char_fmt)
+                cursor.select(QTextCursor.BlockUnderCursor)
+                cursor.mergeCharFormat(char_fmt) 
             block = block.next()
+
 
     def update_margins(self, fmt):
         left_indent, right_indent = INDENT_MAP.get(fmt.property(1001), (0, 0))
-        print(fmt)
 
         assert type(fmt) == QTextBlockFormat
         fmt.setLeftMargin(left_indent)
