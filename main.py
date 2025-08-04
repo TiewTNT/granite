@@ -1,16 +1,25 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
-    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate
+    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate,
+    QLabel
 )
 
 from PySide6.QtGui import (
-    QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices, QTextBlockFormat, QKeySequence, QShortcut
+    QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat
 )
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
 import ast, json, os
+from platformdirs import user_data_dir
+
+app_name = "Granite"
+
+data_path = Path(user_data_dir(app_name))
+data_path.mkdir(parents=True, exist_ok=True)
+print(data_path)
 
 class TypographyScale:
     def __init__(self, base_size=12, ratio=1.25):
@@ -150,8 +159,55 @@ def load_svg_icon(path, size=24):
     icon.addPixmap(pixmap)
     return icon
 
+def format_action(icon_name, check_state_func, order, block=False, give_cursor=False):
+    """
+    Decorator for creating formatting actions.
+    If give_cursor=True, the QTextCursor will be passed to both func and check_state_func.
+    Works correctly for both character and block formats (e.g. headings).
+    """
+    def decorator(func):
+        def wrapper(instance, checked=None):
+            cursor = instance.text_edit.textCursor()
+            cursor.beginEditBlock()
 
-def format_action(icon_name, check_state_func, order, block=False):
+            if block:
+                block_fmt = cursor.blockFormat()
+                if give_cursor:
+                    func(instance, cursor, block_fmt, checked)
+                else:
+                    func(instance, block_fmt, checked)
+                # Ensure block format changes (like headings) are applied to the block
+                cursor.setBlockFormat(block_fmt)
+            else:
+                char_fmt = QTextCharFormat()
+                if give_cursor:
+                    func(instance, cursor, char_fmt, checked)
+                else:
+                    func(instance, char_fmt, checked)
+                if cursor.hasSelection():
+                    cursor.mergeCharFormat(char_fmt)
+                else:
+                    instance.text_edit.mergeCurrentCharFormat(char_fmt)
+
+            cursor.endEditBlock()
+            instance.text_edit.viewport().update()
+            instance.update_format_states()
+
+        if give_cursor:
+            def wrapped_check(fmt, instance):
+                return check_state_func(instance.text_edit.textCursor(), fmt)
+            wrapper._check_state_func = wrapped_check
+        else:
+            wrapper._check_state_func = check_state_func
+
+        wrapper._action_icon = icon_name
+        wrapper._order = order
+        wrapper._give_cursor = give_cursor
+        return wrapper
+    return decorator
+
+
+def format_action(icon_name, check_state_func, order, block=False, give_cursor=False):
     def decorator(func):
         def wrapper(self, checked=None):
             cursor = self.text_edit.textCursor()
@@ -164,7 +220,8 @@ def format_action(icon_name, check_state_func, order, block=False):
             char_fmt  = QTextCharFormat()
 
             # 2) Let the action set its bits
-            func(self, block_fmt or char_fmt, checked)
+            if give_cursor: func(self, cursor, block_fmt or char_fmt, checked) 
+            else: func(self, block_fmt or char_fmt, checked)
 
             if block:
                 level = block_fmt.property(1001)
@@ -201,15 +258,22 @@ def format_action(icon_name, check_state_func, order, block=False):
             self.update_format_states()
         wrapper._action_icon      = icon_name
         wrapper._order            = order
-        wrapper._check_state_func = check_state_func
+        if give_cursor:
+            def wrapped_check(fmt, instance):
+                return check_state_func(instance.text_edit.textCursor(), fmt)
+            wrapper._check_state_func = wrapped_check
+        else:
+            wrapper._check_state_func = check_state_func
         return wrapper
     return decorator
+
+
 
 
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Text Editor")
+        self.setWindowTitle("Granite")
         self.setWindowIcon(QIcon('./assets/app_icon.svg'))
         layout = QVBoxLayout()
         
@@ -221,11 +285,13 @@ class App(QMainWindow):
 
         default_font = QFont()
         default_font.setPointSizeF(TypographyScale(self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(4)) 
-        self.text_edit.setStyleSheet("* {color:"+self.settings_dict["text_fg"]+";background-color:"+self.settings_dict["background"]+"}")
+
         default_fmt = QTextCharFormat()
         default_fmt.setFont(default_font)
         self.text_edit.setCurrentCharFormat(default_fmt)
         self.text_edit.setFont(default_font)
+        self.save()
+
 
         # — toolbar —
         self.toolbar = QToolBar("Formatting")
@@ -238,7 +304,7 @@ class App(QMainWindow):
         self.model = GraniteFileSystemModel()
 
         self.model.setIconProvider(GraniteFileIconProvider())
-        self.model.setRootPath(r"C:\Users\tntti\AppData\Roaming\TEST")  # Set the root path (empty string for the entire file system)
+        self.model.setRootPath(str(data_path))  # Set the root path (empty string for the entire file system)
         self.model.setNameFilters(["*.grnt"])
         self.model.setNameFilterDisables(False)  # Hide files not matching
         self.model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot | QDir.Files)
@@ -246,7 +312,7 @@ class App(QMainWindow):
         # Create a QTreeView
         self.tree_view = QTreeView()
         self.tree_view.setModel(self.model)
-        self.tree_view.setRootIndex(self.model.index(r"C:\Users\tntti\AppData\Roaming\TEST"))  # Set the root index to the file system root
+        self.tree_view.setRootIndex(self.model.index(str(data_path)))  # Set the root index to the file system root
         self.tree_view.setMinimumWidth(75)
 
         self.tree_view.setEditTriggers(QTreeView.EditKeyPressed | QTreeView.SelectedClicked)
@@ -298,6 +364,7 @@ class App(QMainWindow):
         self.link_input.editingFinished.connect(self._on_link_entered)
         self.link_input.installEventFilter(self)
         self.link_input.setAttribute(Qt.WA_Hover)
+        
         self._pending_link_url = ""
         self.url = ""
 
@@ -309,7 +376,7 @@ class App(QMainWindow):
        
 
         self.non_link_underline = False
-        self.non_link_fg = self.settings_dict["text_fg"]
+        self.non_link_fg = self.text_edit.palette().brush(QPalette.Text)
 
         self.link_input.hide()
         text_edit_block_fmt = QTextBlockFormat()
@@ -339,14 +406,20 @@ class App(QMainWindow):
         "accent_color": "#c7795f",
         "scale_ratio": 1.25,
         "scale_base": 12,
-        "text_fg": "#ffffff",
-        "background": "#2d2d2d",
     }
+
     
     def on_file_selection_changed(self):
+        if not self.tree_view.selectedIndexes():
+            self.statusBar().showMessage("No file selected")
+            return
+        
         path = self.tree_view.model().filePath(self.tree_view.selectedIndexes()[0])
         if Path(path).is_dir():
             return
+        
+        self.statusBar().showMessage('Editing "'+Path(path).stem+'"')
+        
         self.current_file = path
         raw = Path(self.current_file).read_text(encoding="utf-8")
 
@@ -363,8 +436,7 @@ class App(QMainWindow):
             self.text_edit.setHtml(html)
 
         self.settings_dict.update({k: settings.get(k, self.settings_dict.get(k))
-                                for k in ("scale_base", "scale_ratio",
-                                            "background", "text_fg", "accent_color")})
+                                for k in ("scale_base", "scale_ratio", "accent_color")})
 
         doc = self.text_edit.document()
         for b in settings.get("block_states", []):
@@ -372,9 +444,10 @@ class App(QMainWindow):
 
             if block.isValid():
                 block.setUserState(b["userState"])
-                print(b)
-
-                block.blockFormat().setProperty(1001, b.get('1001', 4))
+                cursor = QTextCursor(block)
+                fmt = block.blockFormat()
+                fmt.setProperty(1001, b.get('1001', 4))
+                cursor.setBlockFormat(fmt)
                 
 
         self.apply_typography_scale()
@@ -382,35 +455,37 @@ class App(QMainWindow):
 
 
     def save(self):
-        settings = {"scale_base": self.settings_dict["scale_base"],
-                    "scale_ratio": self.settings_dict["scale_ratio"],
-                    "background": self.settings_dict["background"],
-                    "text_fg": self.settings_dict["text_fg"],
-                    "accent_color": self.settings_dict["accent_color"]}
+        if self.current_file:
+            settings = {"scale_base": self.settings_dict["scale_base"],
+                        "scale_ratio": self.settings_dict["scale_ratio"],
+                        "accent_color": self.settings_dict["accent_color"]}
 
-        blocks_data = []
-        doc = self.text_edit.document()
-        block = doc.begin()
-        while block.isValid():                        # QTextBlock.isValid()
-        
-            state = block.userState()                 # per-block integer
+            blocks_data = []
+            doc = self.text_edit.document()
+            block = doc.begin()
+            while block.isValid():                        # QTextBlock.isValid()
+            
+                state = block.userState()                 # per-block integer
 
-            p1001 = block.blockFormat().property(1001)
-            blocks_data.append({
-                "pos": block.position(),
-                "userState": state,
-                1001: p1001
-            })
-            block = block.next()                      # QTextBlock.next()
-        settings["block_states"] = blocks_data
+                p1001 = block.blockFormat().property(1001)
 
-        settings_str = json.dumps(settings)  # Use JSON reliably
+                blocks_data.append({
+                    "pos": block.position(),
+                    "userState": state,
+                    "1001": p1001
+                })
+                block = block.next()                      # QTextBlock.next()
+            settings["block_states"] = blocks_data
+
+            settings_str = json.dumps(settings)  # Use JSON reliably
 
 
-        with QSignalBlocker(doc):  # prevents recursive documentsignal emission
-            html = doc.toHtml()
+            with QSignalBlocker(doc):  # prevents recursive documentsignal emission
+                html = doc.toHtml()
 
-        Path(self.current_file).write_text(settings_str + ":::" + html, encoding="utf-8")
+            Path(self.current_file).write_text(settings_str + ":::" + html, encoding="utf-8")
+        else:
+            self.statusBar().showMessage("No file selected")
 
     def auto_indent_bodies(self):
         doc = self.text_edit.document()
@@ -457,7 +532,11 @@ class App(QMainWindow):
                 btn_pos = self.link_button.mapToGlobal(QPoint(0, self.link_button.height()))
                 self.link_input.move(btn_pos)
                 self.link_input.show()
+                self.link_input.raise_()
+                self.link_input.activateWindow()
+
                 self.link_input.setFocus()
+                
                 return True
             elif event.type() == QEvent.Leave:
                 self._on_link_entered()
@@ -482,55 +561,31 @@ class App(QMainWindow):
             self._apply_or_remove_link(True)
 
     def _apply_or_remove_link(self, checked):
-        """
-        Works like bold/italic:
-        - If checked: link is active (selection or typing)
-        - If unchecked: link is removed
-        """
         cursor = self.text_edit.textCursor()
-        
+
+        fmt = QTextCharFormat()
         if checked:
             if not self._pending_link_url:
-                # Ask for URL if not set
                 btn_pos = self.link_button.mapToGlobal(QPoint(0, self.link_button.height()))
                 self.link_input.move(btn_pos)
                 self.link_input.show()
                 self.link_input.setFocus()
                 return
             
-            fmt = QTextCharFormat()
             fmt.setAnchor(True)
             fmt.setAnchorHref(self._pending_link_url)
-            self.non_link_underline = fmt.fontUnderline()
             fmt.setFontUnderline(True)
-            self.non_link_fg = fmt.foreground()
-            fmt.setForeground(QBrush(App.settings_dict["accent_color"]))
-            if cursor.hasSelection():
-                cursor.mergeCharFormat(fmt)
-            else:
-                self.text_edit.mergeCurrentCharFormat(fmt)
+            fmt.setForeground(QBrush(self.settings_dict["accent_color"]))
         else:
-            if self.url == self.link_input.text().strip():
-                fmt = QTextCharFormat()
-                fmt.setAnchor(False)
-                fmt.setAnchorHref("")
-                fmt.setFontUnderline(self.non_link_underline)
-                fmt.setForeground(self.non_link_fg)
-                if cursor.hasSelection():
-                    cursor.mergeCharFormat(fmt)
-                else:
-                    self.text_edit.mergeCurrentCharFormat(fmt)
-            else:
-                fmt = QTextCharFormat()
-                fmt.setAnchor(True)
-                fmt.setAnchorHref(self.link_input.text().strip())
-                self.url = self.link_input.text().strip()
-                self._pending_link_url = self.url
-                if cursor.hasSelection():
-                    cursor.mergeCharFormat(fmt)
-                else:
-                    self.text_edit.mergeCurrentCharFormat(fmt)
-            
+            fmt.setAnchor(False)
+            fmt.setAnchorHref("")
+            fmt.setFontUnderline(False)
+            fmt.setForeground(self.text_edit.palette().brush(QPalette.Text))
+
+        if cursor.hasSelection():
+            cursor.mergeCharFormat(fmt)
+        else:
+            self.text_edit.mergeCurrentCharFormat(fmt)
 
         self.update_format_states()
 
@@ -568,7 +623,10 @@ class App(QMainWindow):
                 btn.setChecked(bool(fmt.isAnchor()))
             else:
                 check = getattr(method, "_check_state_func", None)
-                btn.setChecked(check(fmt) if check else False)
+                try:
+                    btn.setChecked(check(fmt) if check else False)
+                except TypeError:
+                    btn.setChecked(check(fmt, self) if check else False)
 
         self.auto_indent_bodies()
 
@@ -629,7 +687,7 @@ class App(QMainWindow):
 
     @format_action("color_text.svg", lambda fmt: fmt.foreground().color() == App.settings_dict["accent_color"], 5)
     def toggle_colored_text(self, fmt, checked):
-        fmt.setForeground(QBrush(self.settings_dict["accent_color"]) if checked else QBrush(self.settings_dict["text_fg"]))
+        fmt.setForeground(QBrush(self.settings_dict["accent_color"]) if checked else self.text_edit.palette().brush(QPalette.Text))
 
     @format_action("h1.svg", lambda fmt: fmt.property(1001) == "1", 7, block=True)
     def apply_h1(self, fmt, checked):
@@ -663,6 +721,67 @@ class App(QMainWindow):
     @format_action("align_right.svg", lambda fmt: False, 14, block=True)
     def align_right(self, fmt, checked):
         fmt.setAlignment(Qt.AlignRight)
+
+
+
+    @format_action(
+        "bullet_list.svg",
+        # check_state_func: is this block in a ListDisc?
+        lambda cursor, fmt: (
+            bool(cursor.block().textList()) and cursor.block().textList().format() == QTextListFormat.ListDisc
+        ),
+        order=16,
+        block=True,
+        give_cursor=True
+    )
+    def bullet_list(self, c, fmt, checked):
+        cursor = self.text_edit.textCursor()
+        cursor.beginEditBlock()
+
+        if checked:
+            # wrap in a disc‐style list
+            list_fmt = QTextListFormat()
+            list_fmt.setStyle(QTextListFormat.ListDisc)
+            cursor.createList(list_fmt)
+        else:
+            # remove from list
+            fmt.setObjectIndex(-1)
+            fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+            cursor.mergeBlockFormat(fmt)
+
+        cursor.endEditBlock()
+
+
+    @format_action(
+        "number_list.svg",
+        # check_state_func: is this block in a ListDecimal?
+        lambda cursor, fmt: (
+            bool(cursor.block().textList()) and cursor.block().textList().format() == QTextListFormat.ListDecimal
+        ),
+        order=17,
+        block=True,
+        give_cursor=True
+    )
+    def number_list(self, c, fmt, checked):
+        cursor = self.text_edit.textCursor()
+        cursor.beginEditBlock()
+
+        if checked:
+            # wrap in a disc‐style list
+            list_fmt = QTextListFormat()
+            list_fmt.setStyle(QTextListFormat.ListDecimal)
+
+            cursor.createList(list_fmt)
+        else:
+            # remove from list
+            fmt.setObjectIndex(-1)
+            fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+            cursor.mergeBlockFormat(fmt)
+
+        cursor.endEditBlock()
+
+
+
 
 
 

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+    <circle cx="5" cy="5" r="1" style="paint-order:fill markers stroke"/>
+    <circle cx="5" cy="12" r="1" style="paint-order:fill markers stroke"/>
+    <circle cx="5" cy="19" r="1" style="paint-order:fill markers stroke"/>
+    <path d="m10 5h10" style="paint-order:fill markers stroke"/>
+    <path d="m10 12h10" style="paint-order:fill markers stroke"/>
+    <path d="m10 19h10" style="paint-order:fill markers stroke"/>
+  </g>
+</svg>
