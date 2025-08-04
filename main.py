@@ -1,16 +1,16 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
-    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout
+    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate
 )
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices, QTextBlockFormat, QKeySequence, QShortcut
 )
-from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker
+from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
-import ast, json
+import ast, json, os
 
 class TypographyScale:
     def __init__(self, base_size=12, ratio=1.25):
@@ -26,6 +26,66 @@ INDENT_MAP = {
     "3": (20, 20),   # H3 — more indent
     "4": (30, 30),   # Body — maximum indent
 }
+
+class GraniteFileSystemModel(QFileSystemModel):
+    # emits index to re-expand after rename, so you can restore expansion
+    renameFinished = Signal("QModelIndex")
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Start watching directories under rootpath automatically:
+        self.setReadOnly(True)  # ⚡ disable watchers initially
+
+    def flags(self, index):
+        f = super().flags(index)
+        # Only column 0 can be edited, only for files (not directories)
+        if index.isValid() and index.column() == 0 and not self.isDir(index):
+            return f | Qt.ItemIsEditable
+        return f
+
+    def setData(self, index, value, role=Qt.EditRole):
+        if role == Qt.EditRole and index.isValid() and index.column() == 0:
+            old_path = self.filePath(index)
+            new_name = value
+            if not new_name.lower().endswith(".grnt"):
+                new_name += ".grnt"
+            new_path = os.path.join(os.path.dirname(old_path), new_name)
+
+            if new_path.lower() == old_path.lower():
+                return False  # no change
+
+            if Path(new_path).exists():
+                return False  # avoid overwriting
+
+            # 1) collapse parent index in attached view to release any locks
+            parent = index.parent()
+            if hasattr(self, "treeView"):
+                self.treeView.collapse(parent)
+
+            # 2) enable rename (triggers internal QFileSystemModel.rename())
+            self.setReadOnly(True)  # make sure watchers are off
+            ok = super().setData(index, new_name, role)
+            self.setReadOnly(False)  # turn watchers back on
+
+            if ok:
+                # save collapse state then re-expand after directory scanning finishes
+                QTimer.singleShot(0, lambda idx=index: self.renameFinished.emit(idx))
+            return ok
+        return super().setData(index, value, role)
+    
+class GraniteFileIconProvider(QFileIconProvider):
+    def icon(self, fileInfo):
+        if fileInfo.isDir():
+            return QIcon("./assets/folder.svg")
+        elif fileInfo.suffix().lower() == "grnt":
+            return QIcon("./assets/grnt_icon.svg")
+        return super().icon(fileInfo) 
+    
+class GraniteDelegate(QStyledItemDelegate):
+    def displayText(self, value, locale):
+        if isinstance(value, str):
+            return Path(value).stem
+        return value
 
 class LinkableTextEdit(QTextEdit):
     def mousePressEvent(self, event):
@@ -175,14 +235,29 @@ class App(QMainWindow):
         # — files —
 
         # Create a QFileSystemModel
-        self.model = QFileSystemModel()
+        self.model = GraniteFileSystemModel()
+
+        self.model.setIconProvider(GraniteFileIconProvider())
         self.model.setRootPath(r"C:\Users\tntti\AppData\Roaming\TEST")  # Set the root path (empty string for the entire file system)
+        self.model.setNameFilters(["*.grnt"])
+        self.model.setNameFilterDisables(False)  # Hide files not matching
+        self.model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot | QDir.Files)
 
         # Create a QTreeView
         self.tree_view = QTreeView()
         self.tree_view.setModel(self.model)
         self.tree_view.setRootIndex(self.model.index(r"C:\Users\tntti\AppData\Roaming\TEST"))  # Set the root index to the file system root
         self.tree_view.setMinimumWidth(75)
+
+        self.tree_view.setEditTriggers(QTreeView.EditKeyPressed | QTreeView.SelectedClicked)
+        self.model.setReadOnly(False)
+
+        for col in range(1, self.model.columnCount() - 1):
+            self.tree_view.hideColumn(col)
+
+        self.tree_view.setItemDelegateForColumn(0, GraniteDelegate(self.tree_view))
+
+
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.text_edit)
         self.splitter.addWidget(self.tree_view)
@@ -269,7 +344,10 @@ class App(QMainWindow):
     }
     
     def on_file_selection_changed(self):
-        self.current_file = self.tree_view.model().filePath(self.tree_view.selectedIndexes()[0])
+        path = self.tree_view.model().filePath(self.tree_view.selectedIndexes()[0])
+        if Path(path).is_dir():
+            return
+        self.current_file = path
         raw = Path(self.current_file).read_text(encoding="utf-8")
 
         if ":::" in raw:
