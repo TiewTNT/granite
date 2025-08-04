@@ -1,14 +1,14 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
     QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate,
-    QLabel
+    QLabel, QWidget, 
 )
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
-    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction 
 )
-from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer
+from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
@@ -81,6 +81,8 @@ class GraniteFileSystemModel(QFileSystemModel):
                 QTimer.singleShot(0, lambda idx=index: self.renameFinished.emit(idx))
             return ok
         return super().setData(index, value, role)
+    
+
     
 class GraniteFileIconProvider(QFileIconProvider):
     def icon(self, fileInfo):
@@ -290,7 +292,7 @@ class App(QMainWindow):
         default_fmt.setFont(default_font)
         self.text_edit.setCurrentCharFormat(default_fmt)
         self.text_edit.setFont(default_font)
-        self.save()
+        
 
 
         # — toolbar —
@@ -324,11 +326,49 @@ class App(QMainWindow):
         self.tree_view.setItemDelegateForColumn(0, GraniteDelegate(self.tree_view))
 
 
+
+
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.text_edit)
-        self.splitter.addWidget(self.tree_view)
+        
         self.tree_view.selectionModel().selectionChanged.connect(self.on_file_selection_changed)
         layout.addWidget(self.splitter)
+
+        # Make a files toolbar
+        file_panel = QWidget()
+        file_layout = QVBoxLayout(file_panel)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        file_layout.setSpacing(0)
+
+        # Create toolbar for tree view
+        file_toolbar = QToolBar()
+        file_toolbar.setIconSize(QSize(24, 24))
+
+        self.file_toolbar_text_edit = QLineEdit()
+
+        file_toolbar.addWidget(self.file_toolbar_text_edit)
+
+        file_layout.addWidget(file_toolbar)
+        file_layout.addWidget(self.tree_view)
+
+        # Replace in splitter
+        self.splitter.addWidget(file_panel)
+
+        self.selected_dir = None
+        def update_selected_dir():
+            if self.current_file:
+                if Path(self.current_file).is_dir():
+                    self.selected_dir = str(Path(self.current_file))
+                else:
+                    self.selected_dir = str(Path(self.current_file).parent)
+            else:
+                self.selected_dir = data_path
+
+            print(self.selected_dir)
+
+
+        self.tree_view.selectionModel().selectionChanged.connect(update_selected_dir)
+
 
         self._format_actions = []
 
@@ -394,9 +434,52 @@ class App(QMainWindow):
         file_view_toggle_shortcut.activated.connect(lambda: self.tree_view.setVisible(not self.tree_view.isVisible()))
 
         self.text_edit.document().contentsChange.connect(self.save)
-        
 
-        
+        self.on_file_selection_changed()
+        self.save()
+
+        update_selected_dir()
+
+
+        self._last_clicked_index = None
+
+        self.tree_view.clicked.connect(self._toggle_tree_selection)
+
+        new_btn = QAction(QIcon("./assets/add_file.svg"), "New File", self)
+        new_btn.triggered.connect(self.create_new_file)
+        file_toolbar.addAction(new_btn)
+
+    def _toggle_tree_selection(self, index):
+        if self._last_clicked_index == index:
+            # Second click on same index → deselect
+            self.tree_view.clearSelection()
+            self.statusBar().showMessage("No file selected")
+            self._last_clicked_index = None
+        else:
+            # First click → select
+            self._last_clicked_index = index
+
+
+
+    def create_new_file(self):
+        p = str(Path(self.selected_dir) / self.file_toolbar_text_edit.text())
+        p += ".grnt" if not p.endswith(".grnt") else ""
+        with open(p, 'w'):
+            if not self.current_file:
+                Path(p).write_bytes(Path('./user/file.grnt').read_bytes())
+            self.tree_view_select_path(p)
+
+    def tree_view_select_path(self, file_path):
+        file_path = str(file_path)
+
+        # Get the index for the file
+        index = self.model.index(file_path, 0)
+
+        if index.isValid():
+            self.tree_view.setCurrentIndex(index)  # moves current highlight
+            self.tree_view.selectionModel().select(index, 
+                QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)  # selects visually
+            self.tree_view.scrollTo(index)  # scrolls to make it visible
 
 
     text_fg = Qt.white
@@ -410,55 +493,65 @@ class App(QMainWindow):
 
     
     def on_file_selection_changed(self):
+        def get(p):
+            self.current_file = p
+            raw = Path(self.current_file).read_text(encoding="utf-8")
+
+            if ":::" in raw:
+                settings_str, html = raw.split(":::", 1)
+                try:
+                    settings = json.loads(settings_str)
+                except json.JSONDecodeError:
+                    settings = {}
+            else:
+                settings, html = {}, raw
+
+            with QSignalBlocker(self.text_edit.document()):
+                self.text_edit.setHtml(html)
+
+            self.settings_dict.update({k: settings.get(k, self.settings_dict.get(k))
+                                    for k in ("scale_base", "scale_ratio", "accent_color")})
+
+            doc = self.text_edit.document()
+            for b in settings.get("block_states", []):
+                block = doc.findBlock(b["pos"])
+
+                if block.isValid():
+                    block.setUserState(b["userState"])
+                    cursor = QTextCursor(block)
+                    fmt = block.blockFormat()
+                    fmt.setProperty(1001, b.get('1001', 4))
+                    cursor.setBlockFormat(fmt)
+                    
+
+            self.apply_typography_scale()
+            self.auto_indent_bodies()
+
         if not self.tree_view.selectedIndexes():
             self.statusBar().showMessage("No file selected")
+            path = "./user/file.grnt"
+            get(path)
+            self.current_file = None
             return
         
         path = self.tree_view.model().filePath(self.tree_view.selectedIndexes()[0])
+        
         if Path(path).is_dir():
+            self.current_file = path
             return
         
         self.statusBar().showMessage('Editing "'+Path(path).stem+'"')
         
-        self.current_file = path
-        raw = Path(self.current_file).read_text(encoding="utf-8")
 
-        if ":::" in raw:
-            settings_str, html = raw.split(":::", 1)
-            try:
-                settings = json.loads(settings_str)
-            except json.JSONDecodeError:
-                settings = {}
-        else:
-            settings, html = {}, raw
 
-        with QSignalBlocker(self.text_edit.document()):
-            self.text_edit.setHtml(html)
-
-        self.settings_dict.update({k: settings.get(k, self.settings_dict.get(k))
-                                for k in ("scale_base", "scale_ratio", "accent_color")})
-
-        doc = self.text_edit.document()
-        for b in settings.get("block_states", []):
-            block = doc.findBlock(b["pos"])
-
-            if block.isValid():
-                block.setUserState(b["userState"])
-                cursor = QTextCursor(block)
-                fmt = block.blockFormat()
-                fmt.setProperty(1001, b.get('1001', 4))
-                cursor.setBlockFormat(fmt)
-                
-
-        self.apply_typography_scale()
-        self.auto_indent_bodies()
+        get(path)
 
 
     def save(self):
-        if self.current_file:
+        def store(path):
             settings = {"scale_base": self.settings_dict["scale_base"],
-                        "scale_ratio": self.settings_dict["scale_ratio"],
-                        "accent_color": self.settings_dict["accent_color"]}
+            "scale_ratio": self.settings_dict["scale_ratio"],
+            "accent_color": self.settings_dict["accent_color"]}
 
             blocks_data = []
             doc = self.text_edit.document()
@@ -483,9 +576,13 @@ class App(QMainWindow):
             with QSignalBlocker(doc):  # prevents recursive documentsignal emission
                 html = doc.toHtml()
 
-            Path(self.current_file).write_text(settings_str + ":::" + html, encoding="utf-8")
+            Path(path).write_text(settings_str + ":::" + html, encoding="utf-8")
+        if self.current_file and not Path(self.current_file).is_dir():
+            store(self.current_file)
         else:
             self.statusBar().showMessage("No file selected")
+            store("./user/file.grnt")
+
 
     def auto_indent_bodies(self):
         doc = self.text_edit.document()
@@ -541,12 +638,6 @@ class App(QMainWindow):
             elif event.type() == QEvent.Leave:
                 self._on_link_entered()
                 return False
-        if obj is self.link_button:
-            if event.type() == QEvent.Enter:
-                btn_pos = self.link_button.mapToGlobal(QPoint(0, self.link_button.height()))
-                self.link_input.move(btn_pos)
-                self.link_input.show()
-                return True
 
         return super().eventFilter(obj, event)
 
