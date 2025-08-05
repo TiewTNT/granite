@@ -535,7 +535,7 @@ class App(QMainWindow):
 
     def show_char_picker(self):
         dlg = CharMapDialog(self.handle_char, self)
-        dlg.exec()
+        dlg.show()
     def handle_char(self, char):
         cursor = self.text_edit.textCursor()
         print("You picked:", char)
