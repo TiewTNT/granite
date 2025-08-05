@@ -379,6 +379,10 @@ class App(QMainWindow):
         self.tree_view.setEditTriggers(QTreeView.EditKeyPressed | QTreeView.SelectedClicked)
         self.model.setReadOnly(False)
 
+        tree_font = QFont()
+        tree_font.setPointSize(12)  # Set the desired font size
+        self.tree_view.setFont(tree_font)
+
         
 
 
