@@ -945,7 +945,11 @@ class App(QMainWindow):
     def align_right(self, fmt, checked):
         fmt.setAlignment(Qt.AlignRight)
 
-
+    def clear_list_format(self, cursor):
+        block_fmt = cursor.blockFormat()
+        block_fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+        block_fmt.setObjectIndex(-1)
+        cursor.setBlockFormat(block_fmt)
 
     @format_action(
         "bullet_list.svg",
@@ -958,7 +962,9 @@ class App(QMainWindow):
         give_cursor=True
     )
     def bullet_list(self, c, fmt, checked):
+        
         cursor = self.text_edit.textCursor()
+        self.clear_list_format(cursor)
         cursor.beginEditBlock()
 
         if checked:
@@ -987,6 +993,7 @@ class App(QMainWindow):
     )
     def number_list(self, c, fmt, checked):
         cursor = self.text_edit.textCursor()
+        self.clear_list_format(cursor)
         cursor.beginEditBlock()
 
         if checked:
@@ -1002,6 +1009,43 @@ class App(QMainWindow):
             cursor.mergeBlockFormat(fmt)
 
         cursor.endEditBlock()
+
+        
+    @format_action(
+        "check_list.svg",
+        lambda cursor, fmt: (
+            bool(cursor.block().textList()) and 
+            cursor.block().blockFormat().marker() in 
+                (QTextBlockFormat.MarkerType.Checked, QTextBlockFormat.MarkerType.Unchecked)
+        ),
+        order=18,
+        block=True,
+        give_cursor=True
+    )
+    def check_list(self, c, fmt, checked):
+        cursor = self.text_edit.textCursor()
+        self.clear_list_format(cursor)
+        cursor.beginEditBlock()
+
+        if checked:
+            # Create a new checklist
+            list_fmt = QTextListFormat()
+            list_fmt.setStyle(QTextListFormat.ListDisc)  # style won't matter visually
+            checklist = cursor.createList(list_fmt)
+
+            # Apply checkbox marker to each block in selection
+            block_fmt = QTextBlockFormat()
+            block_fmt.setMarker(QTextBlockFormat.MarkerType.Unchecked)
+            cursor.mergeBlockFormat(block_fmt)
+
+        else:
+            # Remove checkbox marker & list
+            fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+            fmt.setObjectIndex(-1)
+            cursor.mergeBlockFormat(fmt)
+
+        cursor.endEditBlock()
+
 
 
 
