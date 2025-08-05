@@ -1,18 +1,18 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
-    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate,
-    QLabel, QWidget, 
+    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate, QAbstractItemView,
+    QLabel, QWidget, QTreeWidget, QTreeWidgetItem
 )
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
-    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction 
-)
-from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag,
+    )
+from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
-import ast, json, os
+import ast, json, os, shutil
 from platformdirs import user_data_dir
 
 app_name = "Granite"
@@ -43,7 +43,7 @@ class GraniteFileSystemModel(QFileSystemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         # Start watching directories under rootpath automatically:
-        self.setReadOnly(True)  # ⚡ disable watchers initially
+        self.setReadOnly(True)  # disable watchers initially
 
     def flags(self, index):
         f = super().flags(index)
@@ -82,6 +82,35 @@ class GraniteFileSystemModel(QFileSystemModel):
             return ok
         return super().setData(index, value, role)
     
+class FileTreeView(QTreeView):
+    def __init__(self):
+        super().__init__()
+
+    def _handle_deselect(self, event):
+        idx = self.indexAt(event.pos())
+        sel_model = self.selectionModel()
+        if event.button() == Qt.LeftButton:
+            if idx.isValid() and sel_model.isSelected(idx):
+                sel_model.select(idx, QItemSelectionModel.Deselect)
+                sel_model.clearCurrentIndex()
+                self.clearSelection()
+                self.window().statusBar().showMessage("No file selected")
+                return True  # Stop further processing
+            elif not idx.isValid():
+                self.clearSelection()
+                self.window().statusBar().showMessage("No file selected")
+                return True
+        return False
+
+    def mousePressEvent(self, event):
+        if self._handle_deselect(event):
+            return
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if self._handle_deselect(event):
+            return
+        super().mouseDoubleClickEvent(event)
 
     
 class GraniteFileIconProvider(QFileIconProvider):
@@ -311,8 +340,12 @@ class App(QMainWindow):
         self.model.setNameFilterDisables(False)  # Hide files not matching
         self.model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot | QDir.Files)
 
+        
+
+
         # Create a QTreeView
-        self.tree_view = QTreeView()
+        self.tree_view = FileTreeView()
+
         self.tree_view.setModel(self.model)
         self.tree_view.setRootIndex(self.model.index(str(data_path)))  # Set the root index to the file system root
         self.tree_view.setMinimumWidth(75)
@@ -320,10 +353,15 @@ class App(QMainWindow):
         self.tree_view.setEditTriggers(QTreeView.EditKeyPressed | QTreeView.SelectedClicked)
         self.model.setReadOnly(False)
 
+        
+
+
         for col in range(1, self.model.columnCount() - 1):
             self.tree_view.hideColumn(col)
 
         self.tree_view.setItemDelegateForColumn(0, GraniteDelegate(self.tree_view))
+
+        self.tree_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
 
 
@@ -335,8 +373,8 @@ class App(QMainWindow):
         layout.addWidget(self.splitter)
 
         # Make a files toolbar
-        file_panel = QWidget()
-        file_layout = QVBoxLayout(file_panel)
+        self.file_panel = QWidget()
+        file_layout = QVBoxLayout(self.file_panel)
         file_layout.setContentsMargins(0, 0, 0, 0)
         file_layout.setSpacing(0)
 
@@ -352,7 +390,7 @@ class App(QMainWindow):
         file_layout.addWidget(self.tree_view)
 
         # Replace in splitter
-        self.splitter.addWidget(file_panel)
+        self.splitter.addWidget(self.file_panel)
 
         self.selected_dir = None
         def update_selected_dir():
@@ -364,7 +402,6 @@ class App(QMainWindow):
             else:
                 self.selected_dir = data_path
 
-            print(self.selected_dir)
 
 
         self.tree_view.selectionModel().selectionChanged.connect(update_selected_dir)
@@ -431,7 +468,7 @@ class App(QMainWindow):
         self.setLayout(layout)
 
         file_view_toggle_shortcut = QShortcut(QKeySequence("Ctrl+J"), self)
-        file_view_toggle_shortcut.activated.connect(lambda: self.tree_view.setVisible(not self.tree_view.isVisible()))
+        file_view_toggle_shortcut.activated.connect(lambda: self.file_panel.setVisible(not self.file_panel.isVisible()))
 
         self.text_edit.document().contentsChange.connect(self.save)
 
@@ -441,23 +478,21 @@ class App(QMainWindow):
         update_selected_dir()
 
 
-        self._last_clicked_index = None
 
-        self.tree_view.clicked.connect(self._toggle_tree_selection)
 
         new_btn = QAction(QIcon("./assets/add_file.svg"), "New File", self)
         new_btn.triggered.connect(self.create_new_file)
         file_toolbar.addAction(new_btn)
 
-    def _toggle_tree_selection(self, index):
-        if self._last_clicked_index == index:
-            # Second click on same index → deselect
-            self.tree_view.clearSelection()
-            self.statusBar().showMessage("No file selected")
-            self._last_clicked_index = None
-        else:
-            # First click → select
-            self._last_clicked_index = index
+        new_btn = QAction(QIcon("./assets/add_folder.svg"), "New Folder", self)
+        new_btn.triggered.connect(self.create_new_folder)
+        file_toolbar.addAction(new_btn)
+
+        new_btn = QAction(QIcon("./assets/rename.svg"), "Rename", self)
+        new_btn.triggered.connect(self.rename_selected_object)
+        file_toolbar.addAction(new_btn)
+
+        self.tree_view.installEventFilter(self)
 
 
 
@@ -465,9 +500,30 @@ class App(QMainWindow):
         p = str(Path(self.selected_dir) / self.file_toolbar_text_edit.text())
         p += ".grnt" if not p.endswith(".grnt") else ""
         with open(p, 'w'):
-            if not self.current_file:
+            if (not self.current_file) or Path(self.current_file).is_dir():
                 Path(p).write_bytes(Path('./user/file.grnt').read_bytes())
             self.tree_view_select_path(p)
+
+    def create_new_folder(self):
+        p = str(Path(self.selected_dir) / self.file_toolbar_text_edit.text())
+
+        os.mkdir(p)
+
+    def rename_selected_object(self):
+        old_object = self.current_file
+        if Path(old_object).is_dir():
+            p = Path(self.selected_dir)
+            shutil.copytree(str(p), str(Path(p).parent / self.file_toolbar_text_edit.text()))
+
+            self.tree_view_select_path(p)
+            shutil.rmtree(old_object)
+        else:        
+            p = str(Path(self.selected_dir) / self.file_toolbar_text_edit.text())
+            p += ".grnt" if not p.endswith(".grnt") else ""
+            Path(p).write_bytes(Path(old_object).read_bytes())
+
+            self.tree_view_select_path(p)
+            Path(old_object).unlink()
 
     def tree_view_select_path(self, file_path):
         file_path = str(file_path)
@@ -545,6 +601,7 @@ class App(QMainWindow):
 
 
         get(path)
+        self.update_format_states()
 
 
     def save(self):
@@ -638,6 +695,33 @@ class App(QMainWindow):
             elif event.type() == QEvent.Leave:
                 self._on_link_entered()
                 return False
+            
+        if obj is self.tree_view:
+            if event.type() == QEvent.KeyRelease:
+                if event.key() == Qt.Key_Delete:
+                    if self.current_file:
+                        if Path(self.current_file).is_dir():
+                            old_folder = self.current_file
+                            
+                            self.current_file = None
+                            shutil.rmtree(old_folder)
+
+                            self.tree_view.clearSelection()
+                            self._last_clicked_index = None
+                            self.on_file_selection_changed()
+
+                        else:
+                            old_file = self.current_file
+                            
+                            self.current_file = None
+                            if old_file:
+                                os.remove(old_file)
+
+                            self.tree_view.clearSelection()
+                            self._last_clicked_index = None
+                            self.on_file_selection_changed()
+
+
 
         return super().eventFilter(obj, event)
 
@@ -726,23 +810,26 @@ class App(QMainWindow):
         doc = self.text_edit.document()
         block = doc.firstBlock()
         while block.isValid():
-
             fmt = block.blockFormat()
             level = fmt.property(1001)
-            if not level: level = 4
-            if level:
-                font = QFont()
-                font.setPointSizeF(TypographyScale(
-                    self.settings_dict["scale_base"],
-                    self.settings_dict["scale_ratio"]
-                ).size_for(int(level)))
-
-                char_fmt = QTextCharFormat()
-                char_fmt.setFont(font)
-
-                cursor = QTextCursor(block)
-                cursor.select(QTextCursor.BlockUnderCursor)
-                cursor.mergeCharFormat(char_fmt) 
+            if not level:
+                level = 4
+            font_size = TypographyScale(
+                self.settings_dict["scale_base"],
+                self.settings_dict["scale_ratio"]
+            ).size_for(int(level))
+            # Only update font size on all fragments in block, keep bold/italics/underline
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid():
+                    char_fmt = frag.charFormat()
+                    char_fmt.setFontPointSize(font_size)
+                    cursor = QTextCursor(doc)
+                    cursor.setPosition(frag.position())
+                    cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, frag.length())
+                    cursor.setCharFormat(char_fmt)
+                it += 1
             block = block.next()
 
 
