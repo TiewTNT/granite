@@ -1,12 +1,12 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
     QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate, QAbstractItemView,
-    QLabel, QWidget, QTreeWidget, QTreeWidgetItem
+    QLabel, QWidget, QTreeWidget, QTreeWidgetItem, QDialog, QGridLayout, QPushButton, QScrollArea
 )
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
-    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag,
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag
     )
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex
 from PySide6.QtSvg import QSvgRenderer
@@ -20,6 +20,32 @@ app_name = "Granite"
 data_path = Path(user_data_dir(app_name))
 data_path.mkdir(parents=True, exist_ok=True)
 print(data_path)
+
+class CharMapDialog(QDialog):
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Character Map")
+        chars = "™©®☐☑☒✓✔✗✘★☆²³≡≠Σ∈∉∀∃∧∨→↔←"  # just as an example!
+
+        scroll = QScrollArea()
+        grid = QGridLayout()
+        w = QWidget()
+        w.setLayout(grid)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(w)
+
+        for i, char in enumerate(chars):
+            btn = QPushButton(char)
+            btn.setFixedSize(40, 40)
+            btn.clicked.connect(lambda checked, c=char: callback(c))
+            grid.addWidget(btn, i//8, i%8)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(scroll)
+
+    def char_chosen(self, char, callback):
+        callback(char)
+        self.accept()
 
 class TypographyScale:
     def __init__(self, base_size=12, ratio=1.25):
@@ -425,7 +451,7 @@ class App(QMainWindow):
             else:
                 self.toolbar.addSeparator()
 
-        # 2) Link button & URL popup
+        # 2) Link button, URL popup, and character map
         self.toolbar.addSeparator()
         self.link_button = QToolButton()
         self.link_button.setIcon(load_svg_icon("./assets/link.svg"))
@@ -441,11 +467,18 @@ class App(QMainWindow):
         self.link_input.editingFinished.connect(self._on_link_entered)
         self.link_input.installEventFilter(self)
         self.link_input.setAttribute(Qt.WA_Hover)
+
         
         self._pending_link_url = ""
         self.url = ""
 
         self.text_edit.selectionChanged.connect(self.on_selection_changed)
+
+        self.toolbar.addSeparator()
+        self.charmap_button = QToolButton()
+        self.charmap_button.setIcon(load_svg_icon("./assets/symbol.svg"))
+        self.charmap_button.clicked.connect(self.show_char_picker)
+        self.toolbar.addWidget(self.charmap_button)
 
         # 3) Only *now* hook up the cursor‐moved signal, and do one initial state sync
         self.text_edit.cursorPositionChanged.connect(self.update_format_states)
@@ -495,6 +528,14 @@ class App(QMainWindow):
         self.tree_view.installEventFilter(self)
 
 
+
+    def show_char_picker(self):
+        dlg = CharMapDialog(self.handle_char, self)
+        dlg.exec()
+    def handle_char(self, char):
+        cursor = self.text_edit.textCursor()
+        print("You picked:", char)
+        cursor.insertText(char)
 
     def create_new_file(self):
         p = str(Path(self.selected_dir) / self.file_toolbar_text_edit.text())
