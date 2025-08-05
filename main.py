@@ -25,7 +25,7 @@ class CharMapDialog(QDialog):
     def __init__(self, callback, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Character Map")
-        chars = "™©®☐☑☒✓✔✗✘★☆²³≡≠Σ∈∉∀∃∧∨→↔←"  # just as an example!
+        chars = "™©®☐☑☒✓✔✗✘★☆×²³≡≠Σ∈∉∀∃∧∨→↔←"  # just as an example!
 
         scroll = QScrollArea()
         grid = QGridLayout()
