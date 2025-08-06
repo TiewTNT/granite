@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
-    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag, QTextTableFormat, QTextFrameFormat
     )
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex
 from PySide6.QtSvg import QSvgRenderer
@@ -347,7 +347,8 @@ class App(QMainWindow):
         default_fmt.setFont(default_font)
         self.text_edit.setCurrentCharFormat(default_fmt)
         self.text_edit.setFont(default_font)
-        
+
+
 
 
         # — toolbar —
@@ -455,7 +456,7 @@ class App(QMainWindow):
             else:
                 self.toolbar.addSeparator()
 
-        # 2) Link button, URL popup, and character map
+        # 2) Link button, URL popup, character map, and table
         self.toolbar.addSeparator()
         self.link_button = QToolButton()
         self.link_button.setIcon(load_svg_icon("./assets/link.svg"))
@@ -483,6 +484,7 @@ class App(QMainWindow):
         self.charmap_button.setIcon(load_svg_icon("./assets/symbol.svg"))
         self.charmap_button.clicked.connect(self.show_char_picker)
         self.toolbar.addWidget(self.charmap_button)
+
 
         # 3) Only *now* hook up the cursor‐moved signal, and do one initial state sync
         self.text_edit.cursorPositionChanged.connect(self.update_format_states)
@@ -1045,6 +1047,27 @@ class App(QMainWindow):
             cursor.mergeBlockFormat(fmt)
 
         cursor.endEditBlock()
+
+    @format_action(
+        "table.svg",
+        lambda cursor, fmt: (
+            False
+        ),
+        order=20,
+        block=True,
+        give_cursor=True
+    )
+    def insert_table(self, c, fmt, checked):
+        cursor = self.text_edit.textCursor()
+        table_format = QTextTableFormat()
+        table_format.setBorderCollapse(False)
+        table_format.setBorder(1)
+        table_format.setBorderBrush(Qt.black)
+        table_format.setCellPadding(5)
+        table_format.setCellSpacing(2)
+        # optionally set style:
+        table_format.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
+        cursor.insertTable(3, 3, table_format)
 
 
 

@@ -1,10 +1,20 @@
-{"scale_base": 12, "scale_ratio": 1.25, "accent_color": "#c7795f", "block_states": [{"pos": 0, "userState": -1, "1001": null}, {"pos": 6, "userState": -1, "1001": null}]}:::<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
+{"scale_base": 12, "scale_ratio": 1.25, "accent_color": "#c7795f", "block_states": [{"pos": 0, "userState": -1, "1001": null}, {"pos": 1, "userState": -1, "1001": null}, {"pos": 2, "userState": -1, "1001": null}, {"pos": 3, "userState": -1, "1001": null}, {"pos": 4, "userState": -1, "1001": null}, {"pos": 5, "userState": -1, "1001": null}, {"pos": 6, "userState": -1, "1001": null}, {"pos": 7, "userState": -1, "1001": null}, {"pos": 8, "userState": -1, "1001": null}, {"pos": 9, "userState": -1, "1001": null}, {"pos": 10, "userState": -1, "1001": null}]}:::<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
 <html><head><meta name="qrichtext" content="1" /><meta charset="utf-8" /><style type="text/css">
 p, li { white-space: pre-wrap; }
 hr { height: 1px; border-width: 0; }
 li.unchecked::marker { content: "\2610"; }
 li.checked::marker { content: "\2612"; }
 </style></head><body style=" font-family:'Segoe UI'; font-size:12pt; font-weight:400; font-style:normal;">
-<ul style="margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;">
-<li class="checked" style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">vdfaf</li>
-<li class="checked" style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">fdfadffdaf</li></ul></body></html>
+<table border="1" style=" border-color:#000000; border-style:solid;" cellspacing="2" cellpadding="5">
+<tr>
+<td></td>
+<td></td>
+<td></td></tr>
+<tr>
+<td></td>
+<td></td>
+<td></td></tr>
+<tr>
+<td></td>
+<td></td>
+<td></td></tr></table></body></html>

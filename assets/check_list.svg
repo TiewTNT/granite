@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <g stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+    <g fill="#ffffff">
+      <path d="m10 5h9" style="paint-order:fill markers stroke"/>
+      <path d="m10 12h9" style="paint-order:fill markers stroke"/>
+      <path d="m10 19h9" style="paint-order:fill markers stroke"/>
+    </g>
+    <g fill="none">
+      <path d="m4 12 1 1 2-3" style="paint-order:fill markers stroke"/>
+      <path d="m4 19 1 1 2-3" style="paint-order:fill markers stroke"/>
+      <path d="m4 5 1 1 2-3" style="paint-order:fill markers stroke"/>
+    </g>
+  </g>
+</svg>
