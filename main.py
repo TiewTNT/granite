@@ -100,9 +100,11 @@ class EdgeFilter(QObject):
                         )
 
                         if direction.y() > 0 and abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold:
+                            self.press_pos = global_mouse
                             table.insertRows(table.rows(), 1)
 
-                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows()) <= self.threshold and row_empty:
+                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows() + 5) <= self.threshold and row_empty:
+                            self.press_pos = global_mouse
                             table.removeRows(table.rows() - 1, 1)
 
                         right = screen_rect.right()
@@ -119,9 +121,11 @@ class EdgeFilter(QObject):
                         )
 
                         if direction.x() > 0 and abs(global_mouse.x() - screen_rect.right()) <= self.threshold:
+                            self.press_pos = global_mouse
                             table.insertColumns(table.columns(), 1)
 
-                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns()) <= self.threshold and col_empty:
+                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns() + 5) <= self.threshold and col_empty:
+                            self.press_pos = global_mouse
                             table.removeColumns(table.columns() - 1, 1)
 
                         return True
