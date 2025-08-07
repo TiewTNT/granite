@@ -1,1 +1,4 @@
-build/
+/build
+/main.build
+/main.dist
+/nuitka-crash-report.xml

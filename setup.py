@@ -4,7 +4,7 @@ from cx_Freeze import setup, Executable
 # fine tuning.
 build_options = {
         "build_exe": {
-            "packages": ["PySide6", "platformdirs"],
+            "packages": ["PySide6", "platformdirs", "encodings"],
             "include_files": ["assets/", "user/"],  # add your folders/files if needed
         }}
 
