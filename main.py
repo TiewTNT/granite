@@ -6,9 +6,10 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
-    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag, QTextTableFormat, QTextFrameFormat
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag, 
+    QTextTableFormat, QTextFrameFormat, QMouseEvent, QTextTable
     )
-from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex
+from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex, QRectF
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
@@ -20,6 +21,75 @@ app_name = "Granite"
 data_path = Path(user_data_dir(app_name))
 data_path.mkdir(parents=True, exist_ok=True)
 print(data_path)
+
+class EdgeFilter(QObject):
+    def __init__(self, editor, threshold=5):
+        super().__init__(editor)
+        self.editor = editor
+        self.threshold = threshold
+        self.last_mouse_pos = QPoint()
+        
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
+            editor = self.editor
+            vp = editor.viewport()
+            pos = event.position().toPoint()
+
+            # 1) Mouse in screen coords
+            global_mouse = event.globalPosition().toPoint()  # :contentReference[oaicite:4]{index=4}
+
+            # 2) Document layout & frames
+            root = editor.document().rootFrame()            # :contentReference[oaicite:5]{index=5}
+            layout = editor.document().documentLayout()     # :contentReference[oaicite:6]{index=6}
+
+            # Movement direction
+            direction = pos - self.last_mouse_pos
+            self.last_mouse_pos = pos
+
+            doc_pos = vp.mapTo(editor, pos)
+            layout = editor.document().documentLayout()
+            root = editor.document().rootFrame()
+
+            it = root.begin()
+            while not it.atEnd():
+                frame = it.currentFrame()
+                if frame:
+                    # Identify only table frames
+                    from PySide6.QtGui import QTextTable
+                    if isinstance(frame, QTextTable):           # :contentReference[oaicite:7]{index=7}
+                        table = frame
+                        # 3) Get table’s bounding rect in doc coords
+                        rect = layout.frameBoundingRect(frame)   # :contentReference[oaicite:8]{index=8}
+
+                        # 4) Convert to viewport coords
+                        top_left_vp = vp.mapFrom(editor, rect.topLeft().toPoint())
+                        rect_vp = QRectF(top_left_vp.x(), top_left_vp.y(),
+                                         rect.width(), rect.height())
+
+                        # 5) Convert to screen coords
+                        global_tl = vp.mapToGlobal(rect_vp.topLeft().toPoint())  # :contentReference[oaicite:9]{index=9}
+                        screen_rect = QRectF(global_tl, rect_vp.size())
+
+                        # 6) Edge detection in screen space
+                        if abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold:
+                            assert type(direction) == QPoint
+                            print(direction.toTuple())
+                            if direction.toTuple()[1] > 0:
+                                table.insertRows(table.rows(), 1)
+                            elif table.rows():
+                                table.removeRows(table.rows() - 1, 1)
+                            return True
+                        if abs(global_mouse.x() - screen_rect.right()) <= self.threshold:
+                            if direction.toTuple()[0] > 0:
+                                table.insertColumns(table.columns(), 1)
+                            elif table.columns():
+                                table.removeColumns(table.columns() - 1, 1)
+                            return True
+
+                it += 1
+        return super().eventFilter(watched, event)
+
 
 class CharMapDialog(QDialog):
     def __init__(self, callback, parent=None):
@@ -347,6 +417,8 @@ class App(QMainWindow):
         default_fmt.setFont(default_font)
         self.text_edit.setCurrentCharFormat(default_fmt)
         self.text_edit.setFont(default_font)
+        self.text_edit.viewport().installEventFilter(EdgeFilter(self.text_edit))
+
 
 
 
@@ -1069,12 +1141,6 @@ class App(QMainWindow):
         # optionally set style:
         table_format.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
         cursor.insertTable(5, 5, table_format)
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
