@@ -1069,7 +1069,11 @@ class App(QMainWindow):
         # check_state_func: is this block in a ListDisc?
         lambda cursor, fmt: (
             bool(cursor.block().textList()) and cursor.block(
-            ).textList().format() == QTextListFormat.ListDisc
+            ).textList().format().toListFormat().style() == QTextListFormat.ListDisc
+            and
+            cursor.block().blockFormat().marker() not in
+                (QTextBlockFormat.MarkerType.Checked,
+                 QTextBlockFormat.MarkerType.Unchecked)
         ),
         order=16,
         block=True,
@@ -1099,13 +1103,15 @@ class App(QMainWindow):
         # check_state_func: is this block in a ListDecimal?
         lambda cursor, fmt: (
             bool(cursor.block().textList()) and cursor.block(
-            ).textList().format() == QTextListFormat.ListDecimal
+            ).textList().format().toListFormat().style() == QTextListFormat.ListDecimal
         ),
         order=17,
         block=True,
         give_cursor=True
     )
     def number_list(self, c, fmt, checked):
+        assert type(c) == QTextCursor
+        
         cursor = self.text_edit.textCursor()
         self.clear_list_format(cursor)
         cursor.beginEditBlock()
@@ -1123,6 +1129,7 @@ class App(QMainWindow):
             cursor.mergeBlockFormat(fmt)
 
         cursor.endEditBlock()
+
 
     @format_action(
         "check_list.svg",
