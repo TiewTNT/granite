@@ -1062,12 +1062,13 @@ class App(QMainWindow):
         table_format = QTextTableFormat()
         table_format.setBorderCollapse(False)
         table_format.setBorder(1)
-        table_format.setBorderBrush(Qt.black)
-        table_format.setCellPadding(5)
-        table_format.setCellSpacing(2)
+        
+        table_format.setBorderBrush(self.text_edit.palette().brush(QPalette.Text))
+        table_format.setCellPadding(7)
+        table_format.setCellSpacing(0)
         # optionally set style:
         table_format.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
-        cursor.insertTable(3, 3, table_format)
+        cursor.insertTable(5, 5, table_format)
 
 
 
