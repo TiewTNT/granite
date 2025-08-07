@@ -6,14 +6,17 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
-    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag, 
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag,
     QTextTableFormat, QTextFrameFormat, QMouseEvent, QTextTable
-    )
+)
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex, QRectF
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
-import ast, json, os, shutil
+import ast
+import json
+import os
+import shutil
 from platformdirs import user_data_dir
 
 app_name = "Granite"
@@ -22,13 +25,13 @@ data_path = Path(user_data_dir(app_name))
 data_path.mkdir(parents=True, exist_ok=True)
 print(data_path)
 
+
 class EdgeFilter(QObject):
     def __init__(self, editor, threshold=5):
         super().__init__(editor)
         self.editor = editor
         self.threshold = threshold
         self.press_pos = QPoint()
-        
 
     def eventFilter(self, watched, event):
 
@@ -41,11 +44,14 @@ class EdgeFilter(QObject):
             pos = event.position().toPoint()
 
             # 1) Mouse in screen coords
-            global_mouse = event.globalPosition().toPoint()  # :contentReference[oaicite:4]{index=4}
+            # :contentReference[oaicite:4]{index=4}
+            global_mouse = event.globalPosition().toPoint()
 
             # 2) Document layout & frames
-            root = editor.document().rootFrame()            # :contentReference[oaicite:5]{index=5}
-            layout = editor.document().documentLayout()     # :contentReference[oaicite:6]{index=6}
+            # :contentReference[oaicite:5]{index=5}
+            root = editor.document().rootFrame()
+            # :contentReference[oaicite:6]{index=6}
+            layout = editor.document().documentLayout()
 
             # Movement direction
             direction = global_mouse - self.press_pos
@@ -61,40 +67,62 @@ class EdgeFilter(QObject):
                 if frame:
                     # Identify only table frames
                     from PySide6.QtGui import QTextTable
-                    if isinstance(frame, QTextTable):           # :contentReference[oaicite:7]{index=7}
+                    # :contentReference[oaicite:7]{index=7}
+                    if isinstance(frame, QTextTable):
                         table = frame
                         # 3) Get table’s bounding rect in doc coords
-                        rect = layout.frameBoundingRect(frame)   # :contentReference[oaicite:8]{index=8}
+                        # :contentReference[oaicite:8]{index=8}
+                        rect = layout.frameBoundingRect(frame)
 
                         # 4) Convert to viewport coords
-                        top_left_vp = vp.mapFrom(editor, rect.topLeft().toPoint())
+                        top_left_vp = vp.mapFrom(
+                            editor, rect.topLeft().toPoint())
                         rect_vp = QRectF(top_left_vp.x(), top_left_vp.y(),
                                          rect.width(), rect.height())
 
                         # 5) Convert to screen coords
-                        global_tl = vp.mapToGlobal(rect_vp.topLeft().toPoint())  # :contentReference[oaicite:9]{index=9}
+                        # :contentReference[oaicite:9]{index=9}
+                        global_tl = vp.mapToGlobal(rect_vp.topLeft().toPoint())
                         screen_rect = QRectF(global_tl, rect_vp.size())
 
                         # 6) Edge detection in screen space
                         bottom = screen_rect.bottom()
                         y = global_mouse.y()
 
+                        row_empty = all(
+                            table
+                            .cellAt(table.rows() - 1, col)
+                            .firstCursorPosition()
+                            .block()
+                            .text()
+                            .strip() == ""
+                            for col in range(table.columns())
+                        )
 
                         if direction.y() > 0 and abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold:
                             table.insertRows(table.rows(), 1)
 
-                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows()) <= self.threshold:
+                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows()) <= self.threshold and row_empty:
                             table.removeRows(table.rows() - 1, 1)
 
                         right = screen_rect.right()
-                        x     = global_mouse.x()
+                        x = global_mouse.x()
+
+                        col_empty = all(
+                            table
+                            .cellAt(row, table.columns() - 1)
+                            .firstCursorPosition()
+                            .block()
+                            .text()
+                            .strip() == ""
+                            for row in range(table.rows())
+                        )
 
                         if direction.x() > 0 and abs(global_mouse.x() - screen_rect.right()) <= self.threshold:
                             table.insertColumns(table.columns(), 1)
 
-                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns()) <= self.threshold:
+                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns()) <= self.threshold and col_empty:
                             table.removeColumns(table.columns() - 1, 1)
-
 
                         return True
 
@@ -119,7 +147,7 @@ class CharMapDialog(QDialog):
             btn = QPushButton(char)
             btn.setFixedSize(40, 40)
             btn.clicked.connect(lambda checked, c=char: callback(c))
-            grid.addWidget(btn, i//8, i%8)
+            grid.addWidget(btn, i//8, i % 8)
 
         layout = QVBoxLayout(self)
         layout.addWidget(scroll)
@@ -128,6 +156,7 @@ class CharMapDialog(QDialog):
         callback(char)
         self.accept()
 
+
 class TypographyScale:
     def __init__(self, base_size=12, ratio=1.25):
         self.base_size = base_size
@@ -135,13 +164,15 @@ class TypographyScale:
 
     def size_for(self, level):
         return round(self.base_size * (self.ratio ** (4-level)))
-    
+
+
 INDENT_MAP = {
     "1": (0, 0),     # H1 — no indent
     "2": (10, 10),   # H2 — slight indent
     "3": (20, 20),   # H3 — more indent
     "4": (30, 30),   # Body — maximum indent
 }
+
 
 class GraniteFileSystemModel(QFileSystemModel):
     # emits index to re-expand after rename, so you can restore expansion
@@ -185,10 +216,12 @@ class GraniteFileSystemModel(QFileSystemModel):
 
             if ok:
                 # save collapse state then re-expand after directory scanning finishes
-                QTimer.singleShot(0, lambda idx=index: self.renameFinished.emit(idx))
+                QTimer.singleShot(
+                    0, lambda idx=index: self.renameFinished.emit(idx))
             return ok
         return super().setData(index, value, role)
-    
+
+
 class FileTreeView(QTreeView):
     def __init__(self):
         super().__init__()
@@ -219,25 +252,28 @@ class FileTreeView(QTreeView):
             return
         super().mouseDoubleClickEvent(event)
 
-    
+
 class GraniteFileIconProvider(QFileIconProvider):
     def icon(self, fileInfo):
         if fileInfo.isDir():
             return QIcon("./assets/folder.svg")
         elif fileInfo.suffix().lower() == "grnt":
             return QIcon("./assets/grnt_icon.svg")
-        return super().icon(fileInfo) 
-    
+        return super().icon(fileInfo)
+
+
 class GraniteDelegate(QStyledItemDelegate):
     def displayText(self, value, locale):
         if isinstance(value, str):
             return Path(value).stem
         return value
 
+
 class LinkableTextEdit(QTextEdit):
     def mousePressEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
-            cursor = self.cursorForPosition(event.position().toPoint())  # local coords
+            cursor = self.cursorForPosition(
+                event.position().toPoint())  # local coords
             char_fmt = cursor.charFormat()
             if char_fmt.isAnchor():
                 link_url = char_fmt.anchorHref()
@@ -268,11 +304,12 @@ class LinkableTextEdit(QTextEdit):
                 body_fmt = QTextBlockFormat()
                 body_fmt.setProperty(1001, "4")
                 App.update_margins(app, body_fmt)
-            
+
                 cursor.mergeBlockFormat(body_fmt)
 
                 font = QFont()
-                font.setPointSizeF(TypographyScale(App.settings_dict["scale_base"], App.settings_dict["scale_ratio"]).size_for(4))
+                font.setPointSizeF(TypographyScale(
+                    App.settings_dict["scale_base"], App.settings_dict["scale_ratio"]).size_for(4))
                 char_fmt = QTextCharFormat()
                 char_fmt.setFont(font)
                 cursor.setBlockCharFormat(char_fmt)
@@ -296,6 +333,7 @@ def load_svg_icon(path, size=24):
     pixmap.setDevicePixelRatio(dpr)
     icon.addPixmap(pixmap)
     return icon
+
 
 def format_action(icon_name, check_state_func, order, block=False, give_cursor=False):
     """
@@ -355,11 +393,13 @@ def format_action(icon_name, check_state_func, order, block=False, give_cursor=F
 
             # 1) Prepare fresh formats
             block_fmt = QTextBlockFormat() if block else None
-            char_fmt  = QTextCharFormat()
+            char_fmt = QTextCharFormat()
 
             # 2) Let the action set its bits
-            if give_cursor: func(self, cursor, block_fmt or char_fmt, checked) 
-            else: func(self, block_fmt or char_fmt, checked)
+            if give_cursor:
+                func(self, cursor, block_fmt or char_fmt, checked)
+            else:
+                func(self, block_fmt or char_fmt, checked)
 
             if block:
                 level = block_fmt.property(1001)
@@ -368,11 +408,12 @@ def format_action(icon_name, check_state_func, order, block=False, give_cursor=F
                 cursor.mergeBlockFormat(block_fmt)
 
                 # 4) If it set a header property, size & merge that block's char‐format
-                
+
                 if level:
                     idx = int(level)               # "h2" → 2
                     font = QFont()
-                    font.setPointSizeF(TypographyScale(self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(idx))
+                    font.setPointSizeF(TypographyScale(
+                        self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(idx))
                     char_fmt.setFont(font)
 
                     cursor.setBlockCharFormat(char_fmt)
@@ -394,8 +435,8 @@ def format_action(icon_name, check_state_func, order, block=False, give_cursor=F
 
             # 6) Sync toolbar states
             self.update_format_states()
-        wrapper._action_icon      = icon_name
-        wrapper._order            = order
+        wrapper._action_icon = icon_name
+        wrapper._order = order
         if give_cursor:
             def wrapped_check(fmt, instance):
                 return check_state_func(instance.text_edit.textCursor(), fmt)
@@ -406,33 +447,27 @@ def format_action(icon_name, check_state_func, order, block=False, give_cursor=F
     return decorator
 
 
-
-
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Granite")
         self.setWindowIcon(QIcon('./assets/app_icon.svg'))
         layout = QVBoxLayout()
-        
 
         # — text edit —
         self.text_edit = LinkableTextEdit()
-        
+
         self.text_edit.document().setDocumentMargin(30)
 
         default_font = QFont()
-        default_font.setPointSizeF(TypographyScale(self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(4)) 
+        default_font.setPointSizeF(TypographyScale(
+            self.settings_dict["scale_base"], self.settings_dict["scale_ratio"]).size_for(4))
 
         default_fmt = QTextCharFormat()
         default_fmt.setFont(default_font)
         self.text_edit.setCurrentCharFormat(default_fmt)
         self.text_edit.setFont(default_font)
         self.text_edit.viewport().installEventFilter(EdgeFilter(self.text_edit))
-
-
-
-
 
         # — toolbar —
         self.toolbar = QToolBar("Formatting")
@@ -445,45 +480,41 @@ class App(QMainWindow):
         self.model = GraniteFileSystemModel()
 
         self.model.setIconProvider(GraniteFileIconProvider())
-        self.model.setRootPath(str(data_path))  # Set the root path (empty string for the entire file system)
+        # Set the root path (empty string for the entire file system)
+        self.model.setRootPath(str(data_path))
         self.model.setNameFilters(["*.grnt"])
         self.model.setNameFilterDisables(False)  # Hide files not matching
         self.model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot | QDir.Files)
-
-        
-
 
         # Create a QTreeView
         self.tree_view = FileTreeView()
 
         self.tree_view.setModel(self.model)
-        self.tree_view.setRootIndex(self.model.index(str(data_path)))  # Set the root index to the file system root
+        # Set the root index to the file system root
+        self.tree_view.setRootIndex(self.model.index(str(data_path)))
         self.tree_view.setMinimumWidth(75)
 
-        self.tree_view.setEditTriggers(QTreeView.EditKeyPressed | QTreeView.SelectedClicked)
+        self.tree_view.setEditTriggers(
+            QTreeView.EditKeyPressed | QTreeView.SelectedClicked)
         self.model.setReadOnly(False)
 
         tree_font = QFont()
         tree_font.setPointSize(12)  # Set the desired font size
         self.tree_view.setFont(tree_font)
 
-        
-
-
         for col in range(1, self.model.columnCount() - 1):
             self.tree_view.hideColumn(col)
 
-        self.tree_view.setItemDelegateForColumn(0, GraniteDelegate(self.tree_view))
+        self.tree_view.setItemDelegateForColumn(
+            0, GraniteDelegate(self.tree_view))
 
         self.tree_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
-
-
-
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.text_edit)
-        
-        self.tree_view.selectionModel().selectionChanged.connect(self.on_file_selection_changed)
+
+        self.tree_view.selectionModel().selectionChanged.connect(
+            self.on_file_selection_changed)
         layout.addWidget(self.splitter)
 
         # Make a files toolbar
@@ -507,6 +538,7 @@ class App(QMainWindow):
         self.splitter.addWidget(self.file_panel)
 
         self.selected_dir = None
+
         def update_selected_dir():
             if self.current_file:
                 if Path(self.current_file).is_dir():
@@ -516,16 +548,15 @@ class App(QMainWindow):
             else:
                 self.selected_dir = data_path
 
-
-
         self.tree_view.selectionModel().selectionChanged.connect(update_selected_dir)
-
 
         self._format_actions = []
 
         # 1) Decorator‐based format buttons (bold/italic/underline)
-        format_funcs = [getattr(self, attr_name) for attr_name in dir(self) if callable(getattr(self, attr_name)) and hasattr(getattr(self, attr_name), "_action_icon")]
-        ordered_format_funcs = list("A"*(max([m._order for m in format_funcs]) + 1))
+        format_funcs = [getattr(self, attr_name) for attr_name in dir(self) if callable(
+            getattr(self, attr_name)) and hasattr(getattr(self, attr_name), "_action_icon")]
+        ordered_format_funcs = list(
+            "A"*(max([m._order for m in format_funcs]) + 1))
         for i in format_funcs:
             ordered_format_funcs[i._order] = i
         for method in ordered_format_funcs:
@@ -549,14 +580,15 @@ class App(QMainWindow):
         self.toolbar.addWidget(self.link_button)
 
         self.link_input = QLineEdit(self)
-        self.link_input.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.link_input.setFocusPolicy(Qt.StrongFocus)  # Can take focus without blocking
+        self.link_input.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # Can take focus without blocking
+        self.link_input.setFocusPolicy(Qt.StrongFocus)
         self.link_input.setPlaceholderText("Enter URL and press Enter")
         self.link_input.editingFinished.connect(self._on_link_entered)
         self.link_input.installEventFilter(self)
         self.link_input.setAttribute(Qt.WA_Hover)
 
-        
         self._pending_link_url = ""
         self.url = ""
 
@@ -568,11 +600,9 @@ class App(QMainWindow):
         self.charmap_button.clicked.connect(self.show_char_picker)
         self.toolbar.addWidget(self.charmap_button)
 
-
         # 3) Only *now* hook up the cursor‐moved signal, and do one initial state sync
         self.text_edit.cursorPositionChanged.connect(self.update_format_states)
         self.update_format_states()
-       
 
         self.non_link_underline = False
         self.non_link_fg = self.text_edit.palette().brush(QPalette.Text)
@@ -580,7 +610,7 @@ class App(QMainWindow):
         self.link_input.hide()
         text_edit_block_fmt = QTextBlockFormat()
         text_edit_block_fmt.setProperty(1001, "4")
-        
+
         cursor = self.text_edit.textCursor()
         self.update_margins(text_edit_block_fmt)
         self.auto_indent_bodies()
@@ -590,7 +620,8 @@ class App(QMainWindow):
         self.setLayout(layout)
 
         file_view_toggle_shortcut = QShortcut(QKeySequence("Ctrl+J"), self)
-        file_view_toggle_shortcut.activated.connect(lambda: self.file_panel.setVisible(not self.file_panel.isVisible()))
+        file_view_toggle_shortcut.activated.connect(
+            lambda: self.file_panel.setVisible(not self.file_panel.isVisible()))
 
         self.text_edit.document().contentsChange.connect(self.save)
 
@@ -598,9 +629,6 @@ class App(QMainWindow):
         self.save()
 
         update_selected_dir()
-
-
-
 
         new_btn = QAction(QIcon("./assets/add_file.svg"), "New File", self)
         new_btn.triggered.connect(self.create_new_file)
@@ -616,11 +644,10 @@ class App(QMainWindow):
 
         self.tree_view.installEventFilter(self)
 
-
-
     def show_char_picker(self):
         dlg = CharMapDialog(self.handle_char, self)
         dlg.show()
+
     def handle_char(self, char):
         cursor = self.text_edit.textCursor()
         print("You picked:", char)
@@ -643,12 +670,14 @@ class App(QMainWindow):
         old_object = self.current_file
         if Path(old_object).is_dir():
             p = Path(self.selected_dir)
-            shutil.copytree(str(p), str(Path(p).parent / self.file_toolbar_text_edit.text()))
+            shutil.copytree(str(p), str(Path(p).parent /
+                            self.file_toolbar_text_edit.text()))
 
             self.tree_view_select_path(p)
             shutil.rmtree(old_object)
-        else:        
-            p = str(Path(self.selected_dir) / self.file_toolbar_text_edit.text())
+        else:
+            p = str(Path(self.selected_dir) /
+                    self.file_toolbar_text_edit.text())
             p += ".grnt" if not p.endswith(".grnt") else ""
             Path(p).write_bytes(Path(old_object).read_bytes())
 
@@ -663,10 +692,9 @@ class App(QMainWindow):
 
         if index.isValid():
             self.tree_view.setCurrentIndex(index)  # moves current highlight
-            self.tree_view.selectionModel().select(index, 
-                QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)  # selects visually
+            self.tree_view.selectionModel().select(index,
+                                                   QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)  # selects visually
             self.tree_view.scrollTo(index)  # scrolls to make it visible
-
 
     text_fg = Qt.white
     current_file = None
@@ -677,7 +705,6 @@ class App(QMainWindow):
         "scale_base": 12,
     }
 
-    
     def on_file_selection_changed(self):
         def get(p):
             self.current_file = p
@@ -696,7 +723,7 @@ class App(QMainWindow):
                 self.text_edit.setHtml(html)
 
             self.settings_dict.update({k: settings.get(k, self.settings_dict.get(k))
-                                    for k in ("scale_base", "scale_ratio", "accent_color")})
+                                       for k in ("scale_base", "scale_ratio", "accent_color")})
 
             doc = self.text_edit.document()
             for b in settings.get("block_states", []):
@@ -708,7 +735,6 @@ class App(QMainWindow):
                     fmt = block.blockFormat()
                     fmt.setProperty(1001, b.get('1001', 4))
                     cursor.setBlockFormat(fmt)
-                    
 
             self.apply_typography_scale()
             self.auto_indent_bodies()
@@ -719,32 +745,30 @@ class App(QMainWindow):
             get(path)
             self.current_file = None
             return
-        
-        path = self.tree_view.model().filePath(self.tree_view.selectedIndexes()[0])
-        
+
+        path = self.tree_view.model().filePath(
+            self.tree_view.selectedIndexes()[0])
+
         if Path(path).is_dir():
             self.current_file = path
             return
-        
-        self.statusBar().showMessage('Editing "'+Path(path).stem+'"')
-        
 
+        self.statusBar().showMessage('Editing "'+Path(path).stem+'"')
 
         get(path)
         self.update_format_states()
 
-
     def save(self):
         def store(path):
             settings = {"scale_base": self.settings_dict["scale_base"],
-            "scale_ratio": self.settings_dict["scale_ratio"],
-            "accent_color": self.settings_dict["accent_color"]}
+                        "scale_ratio": self.settings_dict["scale_ratio"],
+                        "accent_color": self.settings_dict["accent_color"]}
 
             blocks_data = []
             doc = self.text_edit.document()
             block = doc.begin()
             while block.isValid():                        # QTextBlock.isValid()
-            
+
                 state = block.userState()                 # per-block integer
 
                 p1001 = block.blockFormat().property(1001)
@@ -759,7 +783,6 @@ class App(QMainWindow):
 
             settings_str = json.dumps(settings)  # Use JSON reliably
 
-
             with QSignalBlocker(doc):  # prevents recursive documentsignal emission
                 html = doc.toHtml()
 
@@ -769,7 +792,6 @@ class App(QMainWindow):
         else:
             self.statusBar().showMessage("No file selected")
             store("./user/file.grnt")
-
 
     def auto_indent_bodies(self):
         doc = self.text_edit.document()
@@ -783,16 +805,17 @@ class App(QMainWindow):
             # Check if this block is a heading
             if level in ("1", "2", "3"):
                 prev_header_level = int(level)
-            
+
             # If it's a body block, decide indent
             elif level == "4":
                 if prev_header_level is not None:
                     # Indent body to match its header's indent
-                    left_indent, right_indent = INDENT_MAP.get(str(prev_header_level + 1), (0, 0))
+                    left_indent, right_indent = INDENT_MAP.get(
+                        str(prev_header_level + 1), (0, 0))
                 else:
                     # No header above → flush left
                     left_indent, right_indent = (0, 0)
-                
+
                 fmt.setLeftMargin(left_indent)
                 fmt.setRightMargin(right_indent)
                 cursor = QTextCursor(block)
@@ -800,39 +823,39 @@ class App(QMainWindow):
 
             else:
                 prev_header_level = None  # Reset when encountering unknown format
-            
+
             block = block.next()
 
     def on_selection_changed(self):
         if self.link_button.isChecked():
             self.link_input.setText(self.text_edit_fmt().anchorHref())
 
-
     def eventFilter(self, obj, event):
         # Show URL box when hovering over the link button
         if obj is self.link_button:
             if event.type() == QEvent.Enter:
                 # position the input right below the button
-                btn_pos = self.link_button.mapToGlobal(QPoint(0, self.link_button.height()))
+                btn_pos = self.link_button.mapToGlobal(
+                    QPoint(0, self.link_button.height()))
                 self.link_input.move(btn_pos)
                 self.link_input.show()
                 self.link_input.raise_()
                 self.link_input.activateWindow()
 
                 self.link_input.setFocus()
-                
+
                 return True
             elif event.type() == QEvent.Leave:
                 self._on_link_entered()
                 return False
-            
+
         if obj is self.tree_view:
             if event.type() == QEvent.KeyRelease:
                 if event.key() == Qt.Key_Delete:
                     if self.current_file:
                         if Path(self.current_file).is_dir():
                             old_folder = self.current_file
-                            
+
                             self.current_file = None
                             shutil.rmtree(old_folder)
 
@@ -842,7 +865,7 @@ class App(QMainWindow):
 
                         else:
                             old_file = self.current_file
-                            
+
                             self.current_file = None
                             if old_file:
                                 os.remove(old_file)
@@ -851,13 +874,11 @@ class App(QMainWindow):
                             self._last_clicked_index = None
                             self.on_file_selection_changed()
 
-
-
         return super().eventFilter(obj, event)
 
     def _on_link_entered(self):
         self.url = self.link_input.text().strip()
-        
+
         self._pending_link_url = self.url
         self.link_input.hide()
 
@@ -871,12 +892,13 @@ class App(QMainWindow):
         fmt = QTextCharFormat()
         if checked:
             if not self._pending_link_url:
-                btn_pos = self.link_button.mapToGlobal(QPoint(0, self.link_button.height()))
+                btn_pos = self.link_button.mapToGlobal(
+                    QPoint(0, self.link_button.height()))
                 self.link_input.move(btn_pos)
                 self.link_input.show()
                 self.link_input.setFocus()
                 return
-            
+
             fmt.setAnchor(True)
             fmt.setAnchorHref(self._pending_link_url)
             fmt.setFontUnderline(True)
@@ -900,12 +922,14 @@ class App(QMainWindow):
         fmt = QTextCharFormat()
         fmt.setAnchor(True)
         fmt.setAnchorHref(url)
-        fmt.setFontUnderline(True)                         # typical link underline
+        # typical link underline
+        fmt.setFontUnderline(True)
         fmt.setForeground(QBrush(Qt.blue))                 # typical link color
         if cursor.hasSelection():
             cursor.mergeCharFormat(fmt)
         else:
             self.text_edit.mergeCurrentCharFormat(fmt)
+
     def text_edit_fmt(self):
         cursor = self.text_edit.textCursor()
         if cursor.hasSelection():
@@ -935,7 +959,6 @@ class App(QMainWindow):
 
         self.auto_indent_bodies()
 
-
     def apply_typography_scale(self):
         doc = self.text_edit.document()
         block = doc.firstBlock()
@@ -957,11 +980,11 @@ class App(QMainWindow):
                     char_fmt.setFontPointSize(font_size)
                     cursor = QTextCursor(doc)
                     cursor.setPosition(frag.position())
-                    cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, frag.length())
+                    cursor.movePosition(QTextCursor.Right,
+                                        QTextCursor.KeepAnchor, frag.length())
                     cursor.setCharFormat(char_fmt)
                 it += 1
             block = block.next()
-
 
     def update_margins(self, fmt):
         left_indent, right_indent = INDENT_MAP.get(fmt.property(1001), (0, 0))
@@ -969,10 +992,9 @@ class App(QMainWindow):
         assert type(fmt) == QTextBlockFormat
         fmt.setLeftMargin(left_indent)
         fmt.setRightMargin(right_indent)
-        
-
 
     # format_action decorators for bold/italic/underline
+
     @format_action("bold.svg", lambda fmt: fmt.fontWeight() > QFont.Normal, 0)
     def toggle_bold(self, fmt, checked):
         fmt.setFontWeight(QFont.Bold if checked else QFont.Normal)
@@ -991,11 +1013,13 @@ class App(QMainWindow):
 
     @format_action("highlight.svg", lambda fmt: fmt.background().color() == App.settings_dict["accent_color"] + "55", 4)
     def toggle_highlight(self, fmt, checked):
-        fmt.setBackground(QBrush(self.settings_dict["accent_color"] + "55") if checked else QBrush("#00000000"))
+        fmt.setBackground(QBrush(
+            self.settings_dict["accent_color"] + "55") if checked else QBrush("#00000000"))
 
     @format_action("color_text.svg", lambda fmt: fmt.foreground().color() == App.settings_dict["accent_color"], 5)
     def toggle_colored_text(self, fmt, checked):
-        fmt.setForeground(QBrush(self.settings_dict["accent_color"]) if checked else self.text_edit.palette().brush(QPalette.Text))
+        fmt.setForeground(QBrush(
+            self.settings_dict["accent_color"]) if checked else self.text_edit.palette().brush(QPalette.Text))
 
     @format_action("h1.svg", lambda fmt: fmt.property(1001) == "1", 7, block=True)
     def apply_h1(self, fmt, checked):
@@ -1040,14 +1064,15 @@ class App(QMainWindow):
         "bullet_list.svg",
         # check_state_func: is this block in a ListDisc?
         lambda cursor, fmt: (
-            bool(cursor.block().textList()) and cursor.block().textList().format() == QTextListFormat.ListDisc
+            bool(cursor.block().textList()) and cursor.block(
+            ).textList().format() == QTextListFormat.ListDisc
         ),
         order=16,
         block=True,
         give_cursor=True
     )
     def bullet_list(self, c, fmt, checked):
-        
+
         cursor = self.text_edit.textCursor()
         self.clear_list_format(cursor)
         cursor.beginEditBlock()
@@ -1065,12 +1090,12 @@ class App(QMainWindow):
 
         cursor.endEditBlock()
 
-
     @format_action(
         "number_list.svg",
         # check_state_func: is this block in a ListDecimal?
         lambda cursor, fmt: (
-            bool(cursor.block().textList()) and cursor.block().textList().format() == QTextListFormat.ListDecimal
+            bool(cursor.block().textList()) and cursor.block(
+            ).textList().format() == QTextListFormat.ListDecimal
         ),
         order=17,
         block=True,
@@ -1095,13 +1120,13 @@ class App(QMainWindow):
 
         cursor.endEditBlock()
 
-        
     @format_action(
         "check_list.svg",
         lambda cursor, fmt: (
-            bool(cursor.block().textList()) and 
-            cursor.block().blockFormat().marker() in 
-                (QTextBlockFormat.MarkerType.Checked, QTextBlockFormat.MarkerType.Unchecked)
+            bool(cursor.block().textList()) and
+            cursor.block().blockFormat().marker() in
+                (QTextBlockFormat.MarkerType.Checked,
+                 QTextBlockFormat.MarkerType.Unchecked)
         ),
         order=18,
         block=True,
@@ -1115,7 +1140,8 @@ class App(QMainWindow):
         if checked:
             # Create a new checklist
             list_fmt = QTextListFormat()
-            list_fmt.setStyle(QTextListFormat.ListDisc)  # style won't matter visually
+            # style won't matter visually
+            list_fmt.setStyle(QTextListFormat.ListDisc)
             checklist = cursor.createList(list_fmt)
 
             # Apply checkbox marker to each block in selection
@@ -1145,8 +1171,9 @@ class App(QMainWindow):
         table_format = QTextTableFormat()
         table_format.setBorderCollapse(False)
         table_format.setBorder(1)
-        
-        table_format.setBorderBrush(self.text_edit.palette().brush(QPalette.Text))
+
+        table_format.setBorderBrush(
+            self.text_edit.palette().brush(QPalette.Text))
         table_format.setCellPadding(7)
         table_format.setCellSpacing(0)
         # optionally set style:
