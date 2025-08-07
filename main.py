@@ -27,12 +27,16 @@ class EdgeFilter(QObject):
         super().__init__(editor)
         self.editor = editor
         self.threshold = threshold
-        self.last_mouse_pos = QPoint()
+        self.press_pos = QPoint()
         
 
     def eventFilter(self, watched, event):
+
+        if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+            self.press_pos = event.globalPosition().toPoint()
         if event.type() == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
             editor = self.editor
+            assert type(editor) == LinkableTextEdit
             vp = editor.viewport()
             pos = event.position().toPoint()
 
@@ -44,7 +48,7 @@ class EdgeFilter(QObject):
             layout = editor.document().documentLayout()     # :contentReference[oaicite:6]{index=6}
 
             # Movement direction
-            direction = pos - self.last_mouse_pos
+            direction = global_mouse - self.press_pos
             self.last_mouse_pos = pos
 
             doc_pos = vp.mapTo(editor, pos)
@@ -72,20 +76,27 @@ class EdgeFilter(QObject):
                         screen_rect = QRectF(global_tl, rect_vp.size())
 
                         # 6) Edge detection in screen space
-                        if abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold:
-                            assert type(direction) == QPoint
-                            print(direction.toTuple())
-                            if direction.toTuple()[1] > 0:
-                                table.insertRows(table.rows(), 1)
-                            elif table.rows():
-                                table.removeRows(table.rows() - 1, 1)
-                            return True
-                        if abs(global_mouse.x() - screen_rect.right()) <= self.threshold:
-                            if direction.toTuple()[0] > 0:
-                                table.insertColumns(table.columns(), 1)
-                            elif table.columns():
-                                table.removeColumns(table.columns() - 1, 1)
-                            return True
+                        bottom = screen_rect.bottom()
+                        y = global_mouse.y()
+
+
+                        if direction.y() > 0 and abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold:
+                            table.insertRows(table.rows(), 1)
+
+                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows()) <= self.threshold:
+                            table.removeRows(table.rows() - 1, 1)
+
+                        right = screen_rect.right()
+                        x     = global_mouse.x()
+
+                        if direction.x() > 0 and abs(global_mouse.x() - screen_rect.right()) <= self.threshold:
+                            table.insertColumns(table.columns(), 1)
+
+                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns()) <= self.threshold:
+                            table.removeColumns(table.columns() - 1, 1)
+
+
+                        return True
 
                 it += 1
         return super().eventFilter(watched, event)
