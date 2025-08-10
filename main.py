@@ -1,13 +1,13 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
     QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate, QAbstractItemView,
-    QWidget, QDialog, QGridLayout, QPushButton, QScrollArea
+    QWidget, QDialog, QGridLayout, QPushButton, QScrollArea, QLabel
 )
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
-    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag,
-    QTextTableFormat, QTextFrameFormat
+    QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QAction,
+    QTextTableFormat, QTextFrameFormat,
 )
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel, QRectF
 from PySide6.QtSvg import QSvgRenderer
@@ -167,21 +167,28 @@ class CharMapDialog(QDialog):
     def __init__(self, callback, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Character Map")
-        chars = "™©®☐☑☒✓✔✗✘★☆×²³≡≠Σ∈∉∀∃∧∨→↔←"  # just as an example!
+        chars = {"Measurements": "×²³½㎜㎝㎞㏌㎟㎠㎡㎢", "Checks and Stars": "☐☑☒✓✔✗✘★☆", "Legal": "™©®§¶", "Arrows": "→↔←↑↕↓⇒⇔⇐⇑⇕⇓", "Maths": "≡≠Σ∈∉∀∃∧∨"}
 
         scroll = QScrollArea()
-        grid = QGridLayout()
-        w = QWidget()
-        w.setLayout(grid)
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(w)
+        h = QVBoxLayout()
+        for title, char_block in zip(chars.keys(), chars.values()):
+            grid = QGridLayout()
+            w = QWidget()
+            w.setLayout(grid)
+            scroll.setWidgetResizable(True)
+            h.addWidget(QLabel(title))
+            h.addWidget(w)
+            
 
-        for i, char in enumerate(chars):
-            btn = QPushButton(char)
-            btn.setFixedSize(40, 40)
-            btn.clicked.connect(lambda checked, c=char: callback(c))
-            grid.addWidget(btn, i//8, i % 8)
+            for i, char in enumerate(char_block):
+                btn = QPushButton(char)
+                btn.setFixedSize(40, 40)
+                btn.clicked.connect(lambda checked, c=char: callback(c))
+                grid.addWidget(btn, i//8, i % 8)
 
+        container = QWidget()
+        container.setLayout(h)
+        scroll.setWidget(container)
         layout = QVBoxLayout(self)
         layout.addWidget(scroll)
 
@@ -1223,6 +1230,7 @@ class App(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication([])
+    app.setFont(QFont("Segoe UI"))
     window = App()
     window.show()
     app.exec()
