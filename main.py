@@ -32,12 +32,20 @@ class EdgeFilter(QObject):
         self.editor = editor
         self.threshold = threshold
         self.press_pos = QPoint()
+        self.clicking = False
+        self.resizing_table = False
 
     def eventFilter(self, watched, event):
 
         if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
             self.press_pos = event.globalPosition().toPoint()
         if event.type() == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
+            if self.clicking == False:
+                first_pos = event.globalPosition().toPoint()
+                just_clicked = True
+            else:
+                just_clicked = False
+            self.clicking = True
             editor = self.editor
             assert type(editor) == LinkableTextEdit
             vp = editor.viewport()
@@ -62,6 +70,7 @@ class EdgeFilter(QObject):
             root = editor.document().rootFrame()
 
             it = root.begin()
+            handled = False
             while not it.atEnd():
                 frame = it.currentFrame()
                 if frame:
@@ -98,12 +107,24 @@ class EdgeFilter(QObject):
                             .strip() == ""
                             for col in range(table.columns())
                         )
+                        if just_clicked:
+                            if abs(first_pos.y() - screen_rect.bottom()) <= self.threshold * 3 or \
+                                abs(first_pos.y() - screen_rect.bottom() + rect.height() / table.rows() + 5) <= self.threshold * 3 or \
+                                abs(first_pos.x() - screen_rect.right()) <= self.threshold * 3 or \
+                                abs(first_pos.x() - screen_rect.right() + rect.width() / table.columns() + 5) <= self.threshold * 3 and\
+                                    not rect.contains(event.position().toPoint()):
 
-                        if direction.y() > 0 and abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold:
+                                self.resizing_table = True
+                            else:
+                                self.resizing_table = False
+
+                        if direction.y() > 0 and abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold and self.resizing_table:
+                            handled = True
                             self.press_pos = global_mouse
                             table.insertRows(table.rows(), 1)
 
-                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows() + 5) <= self.threshold and row_empty:
+                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows() + 5) <= self.threshold and row_empty and self.resizing_table:
+                            handled = True
                             self.press_pos = global_mouse
                             table.removeRows(table.rows() - 1, 1)
 
@@ -120,17 +141,26 @@ class EdgeFilter(QObject):
                             for row in range(table.rows())
                         )
 
-                        if direction.x() > 0 and abs(global_mouse.x() - screen_rect.right()) <= self.threshold:
+                        if direction.x() > 0 and abs(global_mouse.x() - screen_rect.right()) <= self.threshold and self.resizing_table:
+                            handled = True
                             self.press_pos = global_mouse
                             table.insertColumns(table.columns(), 1)
 
-                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns() + 5) <= self.threshold and col_empty:
+                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns() + 5) <= self.threshold and col_empty and self.resizing_table:
                             self.press_pos = global_mouse
+                            handled = True
                             table.removeColumns(table.columns() - 1, 1)
 
-                        return True
+                        if handled or self.resizing_table:
+                            return True
+                        
 
                 it += 1
+
+            just_clicked = False
+        if event.type() == QEvent.MouseButtonRelease and not (event.buttons() & Qt.LeftButton):
+            self.clicking = False
+
         return super().eventFilter(watched, event)
 
 
@@ -1072,8 +1102,8 @@ class App(QMainWindow):
             ).textList().format().toListFormat().style() == QTextListFormat.ListDisc
             and
             cursor.block().blockFormat().marker() not in
-                (QTextBlockFormat.MarkerType.Checked,
-                 QTextBlockFormat.MarkerType.Unchecked)
+            (QTextBlockFormat.MarkerType.Checked,
+             QTextBlockFormat.MarkerType.Unchecked)
         ),
         order=16,
         block=True,
@@ -1111,7 +1141,7 @@ class App(QMainWindow):
     )
     def number_list(self, c, fmt, checked):
         assert type(c) == QTextCursor
-        
+
         cursor = self.text_edit.textCursor()
         self.clear_list_format(cursor)
         cursor.beginEditBlock()
@@ -1130,66 +1160,66 @@ class App(QMainWindow):
 
         cursor.endEditBlock()
 
+    # @format_action(
+    #     "check_list.svg",
+    #     lambda cursor, fmt: (
+    #         bool(cursor.block().textList()) and
+    #         cursor.block().blockFormat().marker() in
+    #             (QTextBlockFormat.MarkerType.Checked,
+    #              QTextBlockFormat.MarkerType.Unchecked)
+    #     ),
+    #     order=18,
+    #     block=True,
+    #     give_cursor=True
+    # )
+    # def check_list(self, c, fmt, checked):
+    #     cursor = self.text_edit.textCursor()
+    #     self.clear_list_format(cursor)
+    #     cursor.beginEditBlock()
 
-    @format_action(
-        "check_list.svg",
-        lambda cursor, fmt: (
-            bool(cursor.block().textList()) and
-            cursor.block().blockFormat().marker() in
-                (QTextBlockFormat.MarkerType.Checked,
-                 QTextBlockFormat.MarkerType.Unchecked)
-        ),
-        order=18,
-        block=True,
-        give_cursor=True
-    )
-    def check_list(self, c, fmt, checked):
-        cursor = self.text_edit.textCursor()
-        self.clear_list_format(cursor)
-        cursor.beginEditBlock()
+    #     if checked:
+    #         # Create a new checklist
+    #         list_fmt = QTextListFormat()
+    #         # style won't matter visually
+    #         list_fmt.setStyle(QTextListFormat.ListDisc)
+    #         checklist = cursor.createList(list_fmt)
 
-        if checked:
-            # Create a new checklist
-            list_fmt = QTextListFormat()
-            # style won't matter visually
-            list_fmt.setStyle(QTextListFormat.ListDisc)
-            checklist = cursor.createList(list_fmt)
+    #         # Apply checkbox marker to each block in selection
+    #         block_fmt = QTextBlockFormat()
+    #         block_fmt.setMarker(QTextBlockFormat.MarkerType.Unchecked)
+    #         cursor.mergeBlockFormat(block_fmt)
 
-            # Apply checkbox marker to each block in selection
-            block_fmt = QTextBlockFormat()
-            block_fmt.setMarker(QTextBlockFormat.MarkerType.Unchecked)
-            cursor.mergeBlockFormat(block_fmt)
+    #     else:
+    #         # Remove checkbox marker & list
+    #         fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+    #         fmt.setObjectIndex(-1)
+    #         cursor.mergeBlockFormat(fmt)
 
-        else:
-            # Remove checkbox marker & list
-            fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
-            fmt.setObjectIndex(-1)
-            cursor.mergeBlockFormat(fmt)
-
-        cursor.endEditBlock()
+    #     cursor.endEditBlock()
 
     @format_action(
         "table.svg",
         lambda cursor, fmt: (
             False
         ),
-        order=20,
+        order=19,
         block=True,
         give_cursor=True
     )
     def insert_table(self, c, fmt, checked):
         cursor = self.text_edit.textCursor()
-        table_format = QTextTableFormat()
-        table_format.setBorderCollapse(False)
-        table_format.setBorder(1)
+        if not cursor.currentTable():
+            table_format = QTextTableFormat()
+            table_format.setBorderCollapse(False)
+            table_format.setBorder(1)
 
-        table_format.setBorderBrush(
-            self.text_edit.palette().brush(QPalette.Text))
-        table_format.setCellPadding(7)
-        table_format.setCellSpacing(0)
-        # optionally set style:
-        table_format.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
-        cursor.insertTable(5, 5, table_format)
+            table_format.setBorderBrush(
+                self.text_edit.palette().brush(QPalette.Text))
+            table_format.setCellPadding(7)
+            table_format.setCellSpacing(0)
+            # optionally set style:
+            table_format.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
+            cursor.insertTable(5, 5, table_format)
 
 
 if __name__ == "__main__":
