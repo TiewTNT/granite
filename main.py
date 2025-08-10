@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
     QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag,
-    QTextTableFormat, QTextFrameFormat, QMouseEvent, QTextTable
+    QTextTableFormat, QTextFrameFormat, QMouseEvent, QTextTable, QFontMetrics
 )
 from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex, QRectF
 from PySide6.QtSvg import QSvgRenderer
@@ -177,6 +177,10 @@ INDENT_MAP = {
     "4": (30, 30),   # Body — maximum indent
 }
 
+# Custom block format properties for checkboxes
+CHECKBOX_PROP = 2000
+CHECKBOX_STATE_PROP = 2001  # 0 = unchecked, 1 = checked
+
 
 class GraniteFileSystemModel(QFileSystemModel):
     # emits index to re-expand after rename, so you can restore expansion
@@ -274,7 +278,36 @@ class GraniteDelegate(QStyledItemDelegate):
 
 
 class LinkableTextEdit(QTextEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._checked_svg = QSvgRenderer("./assets/checkbox_checked.svg")
+        self._unchecked_svg = QSvgRenderer("./assets/checkbox_unchecked.svg")
+
+    def _checkbox_rect(self, block):
+        layout = self.document().documentLayout()
+        rect = layout.blockBoundingRect(block).translated(self.contentOffset())
+
+        font = block.charFormat().font()
+        size = QFontMetrics(font).height()
+
+        x = rect.left() - size - 5
+        y = rect.top() + (rect.height() - size) / 2
+        return QRectF(x, y, size, size)
+
     def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            cursor = self.cursorForPosition(event.position().toPoint())
+            block = cursor.block()
+            fmt = block.blockFormat()
+            if fmt.property(CHECKBOX_PROP):
+                box = self._checkbox_rect(block)
+                if box.contains(event.position()):
+                    state = 1 - int(fmt.property(CHECKBOX_STATE_PROP) or 0)
+                    fmt.setProperty(CHECKBOX_STATE_PROP, state)
+                    cursor.setBlockFormat(fmt)
+                    self.viewport().update()
+                    return
+
         if event.modifiers() & Qt.ControlModifier:
             cursor = self.cursorForPosition(
                 event.position().toPoint())  # local coords
@@ -299,11 +332,27 @@ class LinkableTextEdit(QTextEdit):
         super().mouseMoveEvent(event)
 
     def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            cursor = self.textCursor()
+            block = cursor.block()
+            fmt = block.blockFormat()
+            if fmt.property(CHECKBOX_PROP) and not block.text().strip():
+                self.window().clear_list_format(cursor)
+                fmt.setProperty(CHECKBOX_PROP, False)
+                fmt.setProperty(CHECKBOX_STATE_PROP, 0)
+                cursor.mergeBlockFormat(fmt)
+                return
+
         super().keyPressEvent(event)
 
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             cursor = self.textCursor()
             prev_block_fmt = cursor.block().previous().blockFormat()
+            if prev_block_fmt.property(CHECKBOX_PROP):
+                fmt = cursor.blockFormat()
+                fmt.setProperty(CHECKBOX_PROP, True)
+                fmt.setProperty(CHECKBOX_STATE_PROP, 0)
+                cursor.setBlockFormat(fmt)
             if prev_block_fmt.property(1001) in ("1", "2", "3"):
                 body_fmt = QTextBlockFormat()
                 body_fmt.setProperty(1001, "4")
@@ -317,6 +366,20 @@ class LinkableTextEdit(QTextEdit):
                 char_fmt = QTextCharFormat()
                 char_fmt.setFont(font)
                 cursor.setBlockCharFormat(char_fmt)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self.viewport())
+        block = self.document().firstBlock()
+        layout = self.document().documentLayout()
+        while block.isValid():
+            fmt = block.blockFormat()
+            if fmt.property(CHECKBOX_PROP):
+                rect = self._checkbox_rect(block)
+                renderer = self._checked_svg if int(fmt.property(CHECKBOX_STATE_PROP) or 0) else self._unchecked_svg
+                renderer.render(painter, rect)
+            block = block.next()
+
 
 
 def load_svg_icon(path, size=24):
@@ -1062,6 +1125,8 @@ class App(QMainWindow):
         block_fmt = cursor.blockFormat()
         block_fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
         block_fmt.setObjectIndex(-1)
+        block_fmt.setProperty(CHECKBOX_PROP, False)
+        block_fmt.setProperty(CHECKBOX_STATE_PROP, 0)
         cursor.setBlockFormat(block_fmt)
 
     @format_action(
@@ -1070,10 +1135,7 @@ class App(QMainWindow):
         lambda cursor, fmt: (
             bool(cursor.block().textList()) and cursor.block(
             ).textList().format().toListFormat().style() == QTextListFormat.ListDisc
-            and
-            cursor.block().blockFormat().marker() not in
-                (QTextBlockFormat.MarkerType.Checked,
-                 QTextBlockFormat.MarkerType.Unchecked)
+            and not cursor.block().blockFormat().property(CHECKBOX_PROP)
         ),
         order=16,
         block=True,
@@ -1135,9 +1197,7 @@ class App(QMainWindow):
         "check_list.svg",
         lambda cursor, fmt: (
             bool(cursor.block().textList()) and
-            cursor.block().blockFormat().marker() in
-                (QTextBlockFormat.MarkerType.Checked,
-                 QTextBlockFormat.MarkerType.Unchecked)
+            cursor.block().blockFormat().property(CHECKBOX_PROP)
         ),
         order=18,
         block=True,
@@ -1149,20 +1209,18 @@ class App(QMainWindow):
         cursor.beginEditBlock()
 
         if checked:
-            # Create a new checklist
             list_fmt = QTextListFormat()
-            # style won't matter visually
             list_fmt.setStyle(QTextListFormat.ListDisc)
-            checklist = cursor.createList(list_fmt)
+            cursor.createList(list_fmt)
 
-            # Apply checkbox marker to each block in selection
             block_fmt = QTextBlockFormat()
-            block_fmt.setMarker(QTextBlockFormat.MarkerType.Unchecked)
+            block_fmt.setProperty(CHECKBOX_PROP, True)
+            block_fmt.setProperty(CHECKBOX_STATE_PROP, 0)
             cursor.mergeBlockFormat(block_fmt)
 
         else:
-            # Remove checkbox marker & list
-            fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+            fmt.setProperty(CHECKBOX_PROP, False)
+            fmt.setProperty(CHECKBOX_STATE_PROP, 0)
             fmt.setObjectIndex(-1)
             cursor.mergeBlockFormat(fmt)
 
