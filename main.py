@@ -1,15 +1,15 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
     QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate, QAbstractItemView,
-    QLabel, QWidget, QTreeWidget, QTreeWidgetItem, QDialog, QGridLayout, QPushButton, QScrollArea
+    QWidget, QDialog, QGridLayout, QPushButton, QScrollArea
 )
 
 from PySide6.QtGui import (
     QFont, QIcon, QTextCharFormat, QBrush, QTextCursor, QPixmap, QPainter, QDesktopServices,
     QTextBlockFormat, QKeySequence, QShortcut, QPalette, QTextListFormat, QTextFormat, QAction, QDrag,
-    QTextTableFormat, QTextFrameFormat, QMouseEvent, QTextTable
+    QTextTableFormat, QTextFrameFormat
 )
-from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel,  QMimeData, QModelIndex, QRectF
+from PySide6.QtCore import QSize, Qt, QEvent, QPoint, QUrl, QSignalBlocker, QDir, QObject, Signal, QTimer, QItemSelectionModel, QRectF
 from PySide6.QtSvg import QSvgRenderer
 
 from pathlib import Path
@@ -153,7 +153,6 @@ class EdgeFilter(QObject):
 
                         if handled or self.resizing_table:
                             return True
-                        
 
                 it += 1
 
