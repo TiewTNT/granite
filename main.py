@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QToolBar, QToolButton,
-    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QFileIconProvider, QStyledItemDelegate, QAbstractItemView,
+    QLineEdit, QFileSystemModel, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QFileIconProvider, QStyledItemDelegate, QAbstractItemView,
     QWidget, QDialog, QGridLayout, QPushButton, QScrollArea, QLabel
 )
 
@@ -17,6 +17,7 @@ import ast
 import json
 import os
 import shutil
+import unicodedata
 from platformdirs import user_data_dir
 
 app_name = "Granite"
@@ -171,6 +172,8 @@ class CharMapDialog(QDialog):
             for i, char in enumerate(char_block):
                 btn = QPushButton(char)
                 btn.setFixedSize(40, 40)
+                btn.setAutoDefault(False)  # Prevents auto focus
+                btn.setDefault(False)
                 btn.clicked.connect(lambda checked, c=char: callback(c))
                 grid.addWidget(btn, i//8, i % 8)
 
@@ -179,11 +182,35 @@ class CharMapDialog(QDialog):
         scroll.setWidget(container)
         layout = QVBoxLayout(self)
         layout.addWidget(scroll)
+        unicode_enter = QHBoxLayout()
+        u_text = QLineEdit()
+        u_plus = QLabel("U+")
+        unicode_enter.addWidget(u_plus)
+        unicode_enter.addWidget(u_text)
+        
+        insert_u_button = QPushButton("Insert")
+        insert_u_button.clicked.connect(lambda checked=False: callback(self.lookup(u_text.text().strip().lower())))
 
-    def char_chosen(self, char, callback):
-        callback(char)
-        self.accept()
+        u_text.textEdited.connect(u_text.setFocus)
 
+        unicode_enter.addWidget(insert_u_button)
+        unicode_enter_widget = QWidget()
+        unicode_enter_widget.setLayout(unicode_enter)
+        layout.addWidget(unicode_enter_widget)
+
+    def lookup(self, val: str):
+        print(val)
+        if val.startswith("u+"): val = val[2:]
+        if val.startswith("0x"): val = val[2:]
+        try:
+            code = int(val, 16)
+            return chr(code)
+        except ValueError as e:
+            try:
+                return unicodedata.lookup(val.upper())
+            except:
+                print(e)
+                return ''
 
 class TypographyScale:
     def __init__(self, base_size=12, ratio=1.25):
