@@ -34,140 +34,120 @@ class EdgeFilter(QObject):
         self.press_pos = QPoint()
         self.clicking = False
         self.resizing_table = False
+        self.active_table = None        # NEW: which table are we resizing?
+        self.active_screen_rect = None  # cache rect in screen coords
+
+    def _iter_tables(self):
+        # Helper to iterate all QTextTables in the document
+        root = self.editor.document().rootFrame()
+        it = root.begin()
+        from PySide6.QtGui import QTextTable
+        while not it.atEnd():
+            frame = it.currentFrame()
+            if frame and isinstance(frame, QTextTable):
+                yield frame
+            it += 1
+
+    def _table_screen_rect(self, table):
+        # Rect for a table in *screen* coords
+        layout = self.editor.document().documentLayout()
+        vp = self.editor.viewport()
+        rect_doc = layout.frameBoundingRect(table)
+        tl_vp = vp.mapFrom(self.editor, rect_doc.topLeft().toPoint())
+        rect_vp = QRectF(tl_vp.x(), tl_vp.y(), rect_doc.width(), rect_doc.height())
+        tl_screen = vp.mapToGlobal(rect_vp.topLeft().toPoint())
+        return QRectF(tl_screen, rect_vp.size())
 
     def eventFilter(self, watched, event):
-
         if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
             self.press_pos = event.globalPosition().toPoint()
-        if event.type() == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
-            if self.clicking == False:
-                first_pos = event.globalPosition().toPoint()
-                just_clicked = True
-            else:
-                just_clicked = False
             self.clicking = True
-            editor = self.editor
-            assert type(editor) == LinkableTextEdit
-            vp = editor.viewport()
-            pos = event.position().toPoint()
+            self.resizing_table = False
+            self.active_table = None
+            self.active_screen_rect = None
+            return False
 
-            # 1) Mouse in screen coords
-            # :contentReference[oaicite:4]{index=4}
+        if event.type() == QEvent.MouseMove and (event.buttons() & Qt.LeftButton):
+            editor = self.editor
+            vp = editor.viewport()
             global_mouse = event.globalPosition().toPoint()
 
-            # 2) Document layout & frames
-            # :contentReference[oaicite:5]{index=5}
-            root = editor.document().rootFrame()
-            # :contentReference[oaicite:6]{index=6}
-            layout = editor.document().documentLayout()
+            # If we don't yet have an active table, choose one based on the press location
+            if self.active_table is None:
+                for table in self._iter_tables():
+                    screen_rect = self._table_screen_rect(table)
+                    near_bottom = abs(self.press_pos.y() - screen_rect.bottom()) <= self.threshold * 3
+                    near_right  = abs(self.press_pos.x() - screen_rect.right())  <= self.threshold * 3
 
-            # Movement direction
+                    if (near_bottom or near_right):
+                        self.active_table = table
+                        self.active_screen_rect = screen_rect
+                        self.resizing_table = True
+                        break
+
+            if not self.resizing_table or self.active_table is None:
+                return False  # not a resize gesture
+
+            # Use only the active table from here on
+            table = self.active_table
+            screen_rect = self._table_screen_rect(table)  # refresh in case layout changed
             direction = global_mouse - self.press_pos
-            self.last_mouse_pos = pos
 
-            doc_pos = vp.mapTo(editor, pos)
-            layout = editor.document().documentLayout()
-            root = editor.document().rootFrame()
-
-            it = root.begin()
             handled = False
-            while not it.atEnd():
-                frame = it.currentFrame()
-                if frame:
-                    # Identify only table frames
-                    from PySide6.QtGui import QTextTable
-                    # :contentReference[oaicite:7]{index=7}
-                    if isinstance(frame, QTextTable):
-                        table = frame
-                        # 3) Get table’s bounding rect in doc coords
-                        # :contentReference[oaicite:8]{index=8}
-                        rect = layout.frameBoundingRect(frame)
 
-                        # 4) Convert to viewport coords
-                        top_left_vp = vp.mapFrom(
-                            editor, rect.topLeft().toPoint())
-                        rect_vp = QRectF(top_left_vp.x(), top_left_vp.y(),
-                                         rect.width(), rect.height())
+            # Row insert/remove
+            row_empty = all(
+                table.cellAt(table.rows()-1, col).firstCursorPosition().block().text().strip() == ""
+                for col in range(table.columns())
+            )
+            if direction.y() > 0 and abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold:
+                table.insertRows(table.rows(), 1)
+                self.press_pos = global_mouse
+                handled = True
+            elif (direction.y() < 0 and
+                  abs(global_mouse.y() - (screen_rect.bottom() - screen_rect.height()/table.rows() - 5)) <= self.threshold and
+                  row_empty):
+                table.removeRows(table.rows()-1, 1)
+                self.press_pos = global_mouse
+                handled = True
 
-                        # 5) Convert to screen coords
-                        # :contentReference[oaicite:9]{index=9}
-                        global_tl = vp.mapToGlobal(rect_vp.topLeft().toPoint())
-                        screen_rect = QRectF(global_tl, rect_vp.size())
+            # Column insert/remove
+            col_empty = all(
+                table.cellAt(row, table.columns()-1).firstCursorPosition().block().text().strip() == ""
+                for row in range(table.rows())
+            )
+            if direction.x() > 0 and abs(global_mouse.x() - screen_rect.right()) <= self.threshold:
+                table.insertColumns(table.columns(), 1)
+                self.press_pos = global_mouse
+                handled = True
+            elif (direction.x() < 0 and
+                  abs(global_mouse.x() - (screen_rect.right() - screen_rect.width()/table.columns() - 5)) <= self.threshold and
+                  col_empty):
+                table.removeColumns(table.columns()-1, 1)
+                self.press_pos = global_mouse
+                handled = True
 
-                        # 6) Edge detection in screen space
-                        bottom = screen_rect.bottom()
-                        y = global_mouse.y()
+            if handled or self.resizing_table:
+                return True
 
-                        row_empty = all(
-                            table
-                            .cellAt(table.rows() - 1, col)
-                            .firstCursorPosition()
-                            .block()
-                            .text()
-                            .strip() == ""
-                            for col in range(table.columns())
-                        )
-                        if just_clicked:
-                            if abs(first_pos.y() - screen_rect.bottom()) <= self.threshold * 3 or \
-                                abs(first_pos.y() - screen_rect.bottom() + rect.height() / table.rows() + 5) <= self.threshold * 3 or \
-                                abs(first_pos.x() - screen_rect.right()) <= self.threshold * 3 or \
-                                abs(first_pos.x() - screen_rect.right() + rect.width() / table.columns() + 5) <= self.threshold * 3 and\
-                                    not rect.contains(event.position().toPoint()):
-
-                                self.resizing_table = True
-                            else:
-                                self.resizing_table = False
-
-                        if direction.y() > 0 and abs(global_mouse.y() - screen_rect.bottom()) <= self.threshold and self.resizing_table:
-                            handled = True
-                            self.press_pos = global_mouse
-                            table.insertRows(table.rows(), 1)
-
-                        elif direction.y() < 0 and abs(global_mouse.y() - screen_rect.bottom() + rect.height() / table.rows() + 5) <= self.threshold and row_empty and self.resizing_table:
-                            handled = True
-                            self.press_pos = global_mouse
-                            table.removeRows(table.rows() - 1, 1)
-
-                        right = screen_rect.right()
-                        x = global_mouse.x()
-
-                        col_empty = all(
-                            table
-                            .cellAt(row, table.columns() - 1)
-                            .firstCursorPosition()
-                            .block()
-                            .text()
-                            .strip() == ""
-                            for row in range(table.rows())
-                        )
-
-                        if direction.x() > 0 and abs(global_mouse.x() - screen_rect.right()) <= self.threshold and self.resizing_table:
-                            handled = True
-                            self.press_pos = global_mouse
-                            table.insertColumns(table.columns(), 1)
-
-                        elif direction.x() < 0 and abs(global_mouse.x() - screen_rect.right() + rect.width() / table.columns() + 5) <= self.threshold and col_empty and self.resizing_table:
-                            self.press_pos = global_mouse
-                            handled = True
-                            table.removeColumns(table.columns() - 1, 1)
-
-                        if handled or self.resizing_table:
-                            return True
-
-                it += 1
-
-            just_clicked = False
         if event.type() == QEvent.MouseButtonRelease and not (event.buttons() & Qt.LeftButton):
+            # Reset the resize session so another table can be picked next time
             self.clicking = False
+            self.resizing_table = False
+            self.active_table = None
+            self.active_screen_rect = None
+            return False
 
         return super().eventFilter(watched, event)
+
 
 
 class CharMapDialog(QDialog):
     def __init__(self, callback, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Character Map")
-        chars = {"Measurements": "×²³½㎜㎝㎞㏌㎟㎠㎡㎢", "Checks and Stars": "☐☑☒✓✔✗✘★☆", "Legal": "™©®§¶", "Arrows": "→↔←↑↕↓⇒⇔⇐⇑⇕⇓", "Maths": "≡≠Σ∈∉∀∃∧∨"}
+        chars = {"Measurements": "×²³½㎜㎝㎞㏌㎟㎠㎡㎢", "Checks and Stars": "☐☑☒✓✔✗✘★☆",
+                 "Legal": "™©®§¶", "Arrows": "→↔←↑↕↓⇒⇔⇐⇑⇕⇓", "Maths": "≡≠Σ∈∉∀∃∧∨"}
 
         scroll = QScrollArea()
         h = QVBoxLayout()
@@ -178,7 +158,6 @@ class CharMapDialog(QDialog):
             scroll.setWidgetResizable(True)
             h.addWidget(QLabel(title))
             h.addWidget(w)
-            
 
             for i, char in enumerate(char_block):
                 btn = QPushButton(char)
@@ -1225,6 +1204,9 @@ class App(QMainWindow):
             table_format.setCellSpacing(0)
             # optionally set style:
             table_format.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
+            blk = cursor.blockFormat()
+            table_format.setLeftMargin(blk.leftMargin())
+            table_format.setRightMargin(blk.rightMargin())
             cursor.insertTable(5, 5, table_format)
 
 
