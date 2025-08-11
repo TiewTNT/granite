@@ -146,8 +146,17 @@ class CharMapDialog(QDialog):
     def __init__(self, callback, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Character Map")
-        chars = {"Measurements": "×²³½㎜㎝㎞㏌㎟㎠㎡㎢", "Checks and Stars": "☐☑☒✓✔✗✘★☆",
-                 "Legal": "™©®§¶", "Arrows": "→↔←↑↕↓⇒⇔⇐⇑⇕⇓", "Maths": "≡≠Σ∈∉∀∃∧∨"}
+        chars = {
+    "Measurements & Fractions": "×÷²²°℃℉㎜㎝㎞㏌㎟㎠㎡㎢½¼¾⅓⅔⅛⅜⅝⅞",
+    "Arrows": "→←↑↓↔↕⇒⇐⇑⇓⇔⇕⟶⟵⟷⟹⟸⟺",
+    "Stars & Shapes": "★☆✦✧✩✪✫✬✭✮✯✰◆◇◈◉⬤◯⬛⬜",
+    "Checks & Crosses": "☑☒☐✓✔✗✘✕✖❌⭕",
+    "Currency": "$¢£¤¥₠₡₢₣₤₥₦₧₨₩₪₫€₭₮₯₰₱₲₳₴₵₶₷₸₹",
+    "Legal & Symbols": "©®™§¶℠†‡•…‽‼⁂※",
+    "Greek Letters": "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩαβγδεζηθικλμνξοπρστυφχψω",
+    "Miscellaneous": "♥♡♠♤♣♧♦♢♪♫♩♬☀☁☂☃☄☾☽",
+    "Math & Logic": "±≈≠≡≤≥∞√∑∏∫∂∆∇∈∉∧∨∀∃",
+}
 
         scroll = QScrollArea()
         h = QVBoxLayout()
